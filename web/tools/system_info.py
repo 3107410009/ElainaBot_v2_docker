@@ -93,6 +93,9 @@ def get_system_info() -> dict:
     bots_count = 0
     today_active = 0
     today_messages = 0
+    active_groups = 0
+    total_users = 0
+    total_groups = 0
     if _bot_manager:
         bots_count = len(_bot_manager._bots)
         if hasattr(_bot_manager, '_plugin_manager') and _bot_manager._plugin_manager:
@@ -103,11 +106,25 @@ def get_system_info() -> dict:
             try:
                 rows = inst.log_service.query(
                     'message',
-                    "SELECT COUNT(*) as cnt, COUNT(DISTINCT user_id) as users "
+                    "SELECT COUNT(*) as cnt, COUNT(DISTINCT user_id) as users, "
+                    "COUNT(DISTINCT group_id) as groups "
                     "FROM log WHERE user_id != ''")
                 if rows:
                     today_messages += rows[0].get('cnt', 0)
                     today_active += rows[0].get('users', 0)
+                    active_groups += rows[0].get('groups', 0)
+            except Exception:
+                pass
+            try:
+                r = inst.log_service.query_data("SELECT COUNT(*) as c FROM users")
+                if r:
+                    total_users += r[0].get('c', 0)
+            except Exception:
+                pass
+            try:
+                r = inst.log_service.query_data("SELECT COUNT(*) as c FROM groups_users")
+                if r:
+                    total_groups += r[0].get('c', 0)
             except Exception:
                 pass
 
@@ -133,6 +150,9 @@ def get_system_info() -> dict:
         'bots_count': bots_count,
         'today_active': today_active,
         'today_messages': today_messages,
+        'active_groups': active_groups,
+        'total_users': total_users,
+        'total_groups': total_groups,
     }
 
 
