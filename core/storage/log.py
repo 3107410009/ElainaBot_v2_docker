@@ -154,10 +154,7 @@ async def _shutdown_tasks(tasks, stop_event):
     stop_event.set()
     for t in tasks:
         t.cancel()
-        try:
-            await t
-        except asyncio.CancelledError:
-            pass
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _close_all_conns(conns):
@@ -249,6 +246,18 @@ class _BaseLogService:
         except Exception as e:
             log.warning(f"[{self._log_tag}] 查询失败 [{log_type}]: {e}")
             return []
+
+    @staticmethod
+    def _extract_common_row(log_type, data, ts):
+        """framework / error 通用提取 (子类共享)"""
+        if log_type == 'framework':
+            return (ts, data.get('content', ''), data.get('level', 'INFO'))
+        if log_type == 'error':
+            return (ts, data.get('appid', '0000'),
+                    data.get('module_type', ''), data.get('module_name', ''),
+                    data.get('content', ''), data.get('traceback', ''),
+                    _json_field(data, 'context', {}))
+        return None
 
     def add_sync(self, log_type, data):
         """同步添加(从非异步上下文中调用)"""
@@ -440,13 +449,9 @@ class LogService(_BaseLogService, ShareMixin, WakeupMixin):
                     data.get('user_id', ''), data.get('group_id', ''),
                     data.get('content', ''), data.get('raw_message', ''),
                     data.get('plugin_name', ''))
-        if log_type == 'framework':
-            return (ts, data.get('content', ''), data.get('level', 'INFO'))
-        if log_type == 'error':
-            return (ts, data.get('appid', '0000'),
-                    data.get('module_type', ''), data.get('module_name', ''),
-                    data.get('content', ''), data.get('traceback', ''),
-                    _json_field(data, 'context', {}))
+        common = self._extract_common_row(log_type, data, ts)
+        if common:
+            return common
         if log_type == 'dau':
             return (data.get('date', datetime.now().strftime('%Y-%m-%d')),
                     data.get('active_users', 0), data.get('active_groups', 0),
@@ -610,11 +615,4 @@ class SharedLogService(_BaseLogService):
 
     def _extract_row(self, log_type, data):
         ts = data.get('timestamp', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        if log_type == 'framework':
-            return (ts, data.get('content', ''), data.get('level', 'INFO'))
-        if log_type == 'error':
-            return (ts, data.get('appid', '0000'),
-                    data.get('module_type', ''), data.get('module_name', ''),
-                    data.get('content', ''), data.get('traceback', ''),
-                    _json_field(data, 'context', {}))
-        return None
+        return self._extract_common_row(log_type, data, ts)

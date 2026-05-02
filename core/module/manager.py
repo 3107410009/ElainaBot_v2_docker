@@ -234,6 +234,16 @@ class ModuleManager:
             get_logger(EXTENSION, info.display_name).info("❌ 已禁用")
             return True
 
+    async def reload(self, name):
+        """重载模块 (teardown → 重新 import + setup), 不改变持久化状态"""
+        info = self._modules.get(name)
+        if not info:
+            return False
+        was_enabled = info.instance is not None
+        if was_enabled:
+            await self.disable(name, _persist=False)
+        return await self.enable(name, _persist=False)
+
     # ==================== 查询 ====================
 
     def get(self, name):

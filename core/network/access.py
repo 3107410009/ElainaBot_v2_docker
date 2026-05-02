@@ -123,9 +123,6 @@ class TokenManager:
         self._closed = True
         if self._refresh_task and not self._refresh_task.done():
             self._refresh_task.cancel()
-            try:
-                await self._refresh_task
-            except asyncio.CancelledError:
-                pass
+            await asyncio.gather(self._refresh_task, return_exceptions=True)
         if self._client and not self._client.closed:
             await self._client.close()

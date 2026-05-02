@@ -102,7 +102,6 @@ class BotInstance:
                 custom_api_base=str(self.bot_cfg.get('api_base', '') or ''),
             )
 
-        bot_log = get_logger(FRAMEWORK, self.name)
         api_info = f", API={self.sender._base_url}" if self.sender._custom_api_base else ''
         bot_log.info(f"✅ 启动完成 (WS={'启用' if self.ws_client else '禁用'}{api_info})")
 
@@ -201,19 +200,22 @@ class BotManager:
             log.error("所有机器人配置均缺少 appid 或 secret")
             return
 
-        # 4. 初始化模块管理器
+        # 4. 创建 HTTP 应用 (模块可能需要注册路由, 须在模块加载前创建)
+        self._init_http_app()
+
+        # 5. 初始化模块管理器
         modules_dir = os.path.join(self._base_dir, 'modules')
         self._module_manager = ModuleManager(modules_dir)
         self._module_manager.discover()
         await self._module_manager.start_enabled()
 
-        # 5. 初始化插件管理器
+        # 6. 初始化插件管理器
         plugins_dir = os.path.join(self._base_dir, 'plugins')
         self._plugin_manager = PluginManager(plugins_dir)
         await self._plugin_manager.load_all()
         self._plugin_manager.start_watcher()
 
-        # 6. 启动通用日志服务 (框架+错误, 不分机器人)
+        # 7. 启动通用日志服务 (框架+错误, 不分机器人)
         log_base = os.path.join(self._base_dir, 'data', cfg.get('settings', 'logging.dir', 'log'))
         log_cfg = cfg.get('settings', 'logging') or {}
         self._shared_log = SharedLogService(
@@ -224,7 +226,7 @@ class BotManager:
         )
         await self._shared_log.start()
 
-        # 7. 启动机器人实例
+        # 8. 启动机器人实例
         self._log_base = log_base
         self._media_dir = os.path.join(self._base_dir, 'data', 'media')
         os.makedirs(self._media_dir, exist_ok=True)
@@ -238,14 +240,14 @@ class BotManager:
             log.error("没有成功启动的机器人")
             return
 
-        # 8. 启动 DAU 统计服务
+        # 9. 启动 DAU 统计服务
         self._dau_service = DAUService(log_base)
         await self._dau_service.start()
 
-        # 9. 启动 HTTP 服务器
+        # 10. 启动 HTTP 服务器
         await self._start_http_server()
 
-        # 10. 定时配置检查 + 媒体清理 + 定时重启
+        # 11. 定时配置检查 + 媒体清理 + 定时重启
         asyncio.create_task(self._config_watch_loop())
         asyncio.create_task(self._media_cleanup_loop(self._media_dir))
         asyncio.create_task(self._restart_scheduler())
@@ -396,12 +398,14 @@ class BotManager:
 
     # ==================== HTTP 服务器 ====================
 
-    async def _start_http_server(self):
-        """启动 aiohttp Webhook 接收服务器 + Web 管理面板"""
+    def _init_http_app(self):
+        """创建 aiohttp Application 并注册基础路由 (模块加载前调用, 路由未冻结)"""
         self._app = web.Application(client_max_size=20 * 1024 * 1024)
         self._app.router.add_post('/', self._handle_webhook)
         self._app.router.add_get('/health', self._handle_health)
 
+    async def _start_http_server(self):
+        """挂载 Web 面板 + 启动 HTTP 服务器 (模块已注册完路由)"""
         # 挂载 Web 管理面板
         try:
             from web.setup import setup_web
@@ -498,17 +502,9 @@ class BotManager:
                     event.raw_user_id, event.union_openid, True)
 
         # 2. 生命周期事件处理
-        if et == GROUP_ADD_ROBOT:
-            await self._handle_group_add(bot, event)
-            return
-        elif et == GROUP_DEL_ROBOT:
-            await self._handle_group_del(bot, event)
-            return
-        elif et == FRIEND_ADD:
-            await self._handle_friend_add(bot, event)
-            return
-        elif et == FRIEND_DEL:
-            await self._handle_friend_del(bot, event)
+        lifecycle_handler = self._LIFECYCLE_HANDLERS.get(et)
+        if lifecycle_handler:
+            await lifecycle_handler(self, bot, event)
             return
 
         # 3. 记录消息日志 + 推送到面板
@@ -560,45 +556,38 @@ class BotManager:
 
     # ==================== 生命周期事件处理 ====================
 
+    def _log_lifecycle(self, bot, log_type, extra=None):
+        """生命周期日志: SQLite + Web 面板"""
+        entry = {'type': log_type, 'user_id': '', 'group_id': ''}
+        if extra:
+            entry.update(extra)
+        asyncio.create_task(bot.log_service.add('lifecycle', entry))
+        self._push_web_log('lifecycle', {
+            'appid': bot.appid, 'bot_name': bot.name, **entry,
+        })
+
     async def _handle_group_add(self, bot, event):
         """机器人被邀请入群"""
-        appid = event.appid
-        await bot.log_service.add('lifecycle', {
-            'type': 'group_add', 'group_id': event.group_id or '',
-            'user_id': event.user_id or '',
-        })
-        self._push_web_log('lifecycle', {
-            'appid': appid, 'bot_name': bot.name,
-            'type': 'group_add', 'group_id': event.group_id or '',
-            'user_id': event.user_id or '',
-        })
-        if cfg.get_bot_setting(appid, 'welcome.group_welcome', False):
+        self._log_lifecycle(bot, 'group_add', {
+            'group_id': event.group_id or '', 'user_id': event.user_id or ''})
+        if cfg.get_bot_setting(event.appid, 'welcome.group_welcome', False):
             try:
                 await bot.sender.reply(event, template_name='welcome',
                                        template_vars={'group_id': event.group_id or ''})
             except Exception as e:
-                report_error(FRAMEWORK, "入群欢迎", e, context={'appid': appid})
+                report_error(FRAMEWORK, "入群欢迎", e, context={'appid': event.appid})
 
     async def _handle_group_del(self, bot, event):
         """机器人被移出群"""
-        await bot.log_service.add('lifecycle', {
-            'type': 'group_del', 'group_id': event.group_id or '',
-            'user_id': event.user_id or '',
-        })
-        self._push_web_log('lifecycle', {
-            'appid': bot.appid, 'bot_name': bot.name,
-            'type': 'group_del', 'group_id': event.group_id or '',
-            'user_id': event.user_id or '',
-        })
+        self._log_lifecycle(bot, 'group_del', {
+            'group_id': event.group_id or '', 'user_id': event.user_id or ''})
 
     async def _handle_friend_add(self, bot, event):
         """用户添加机器人好友 -> 写入 members 表 + 记录分享来源"""
-        appid = event.appid
         uid = event.user_id or ''
         if uid:
             await bot.log_service.db_execute(
                 "INSERT OR IGNORE INTO members (user_id) VALUES (?)", (uid,))
-        # 记录分享来源
         sharer_id = event.sharer_id or ''
         scene = event.scene or 0
         if sharer_id and uid:
@@ -606,30 +595,25 @@ class BotManager:
                 await bot.log_service.share_record(sharer_id, uid, scene)
             except Exception:
                 pass
-        await bot.log_service.add('lifecycle', {
-            'type': 'friend_add', 'user_id': uid,
-            'sharer_id': sharer_id, 'scene': scene,
-        })
-        self._push_web_log('lifecycle', {
-            'appid': appid, 'bot_name': bot.name,
-            'type': 'friend_add', 'user_id': uid,
-        })
-        if cfg.get_bot_setting(appid, 'welcome.friend_add_message', False):
+        self._log_lifecycle(bot, 'friend_add', {
+            'user_id': uid, 'sharer_id': sharer_id, 'scene': scene})
+        if cfg.get_bot_setting(event.appid, 'welcome.friend_add_message', False):
             try:
                 await bot.sender.reply(event, template_name='friend_add',
-                                       template_vars={'user_id': event.user_id or ''})
+                                       template_vars={'user_id': uid})
             except Exception as e:
-                report_error(FRAMEWORK, "好友欢迎", e, context={'appid': appid})
+                report_error(FRAMEWORK, "好友欢迎", e, context={'appid': event.appid})
 
     async def _handle_friend_del(self, bot, event):
         """用户删除机器人好友"""
-        await bot.log_service.add('lifecycle', {
-            'type': 'friend_del', 'user_id': event.user_id or '',
-        })
-        self._push_web_log('lifecycle', {
-            'appid': bot.appid, 'bot_name': bot.name,
-            'type': 'friend_del', 'user_id': event.user_id or '',
-        })
+        self._log_lifecycle(bot, 'friend_del', {'user_id': event.user_id or ''})
+
+    _LIFECYCLE_HANDLERS = {
+        GROUP_ADD_ROBOT: _handle_group_add,
+        GROUP_DEL_ROBOT: _handle_group_del,
+        FRIEND_ADD: _handle_friend_add,
+        FRIEND_DEL: _handle_friend_del,
+    }
 
     # ==================== 辅助 ====================
 
@@ -702,6 +686,10 @@ class BotManager:
         d = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         return (d + timedelta(days=1)).timestamp()
 
+    @staticmethod
+    def _users_json(user_map):
+        return json.dumps(list(user_map.values()), ensure_ascii=False)
+
     async def _add_user_to_group(self, bot, group_id, user_id):
         """记录群成员到 groups_users, 带内存缓存 (当天有效)
 
@@ -717,17 +705,14 @@ class BotManager:
             expire_ts, user_map = cached
             if time.time() < expire_ts:
                 if uid in user_map:
-                    # 已存在, 更新 last_active (如果不是今天)
                     if user_map[uid].get('last_active') == today:
-                        return  # 完全跳过
+                        return
                     user_map[uid]['last_active'] = today
                 else:
-                    # 新用户
                     user_map[uid] = {'userid': uid, 'value': 1, 'last_active': today}
-                # 写入队列, 随 2 秒 flush 批量落盘
                 bot.log_service.db_queue(
                     "UPDATE groups_users SET users=? WHERE group_id=?",
-                    (json.dumps(list(user_map.values()), ensure_ascii=False), group_id))
+                    (self._users_json(user_map), group_id))
                 return
             else:
                 del self._group_users_cache[group_id]
@@ -738,7 +723,6 @@ class BotManager:
                 "SELECT users FROM groups_users WHERE group_id=?", (group_id,))
             if rows:
                 raw = json.loads(rows[0].get('users', '[]'))
-                # 兼容旧格式: ["uid1", "uid2"] → 转为新格式
                 user_map = {}
                 for item in raw:
                     if isinstance(item, str):
@@ -747,20 +731,18 @@ class BotManager:
                         u = item.get('userid', '')
                         if u:
                             user_map[u] = item
-                # 更新当前用户
                 if uid in user_map:
                     user_map[uid]['last_active'] = today
                 else:
                     user_map[uid] = {'userid': uid, 'value': 1, 'last_active': today}
                 bot.log_service.db_queue(
                     "UPDATE groups_users SET users=? WHERE group_id=?",
-                    (json.dumps(list(user_map.values()), ensure_ascii=False), group_id))
+                    (self._users_json(user_map), group_id))
             else:
                 user_map = {uid: {'userid': uid, 'value': 1, 'last_active': today}}
                 bot.log_service.db_queue(
                     "INSERT INTO groups_users (group_id, users) VALUES (?, ?)",
-                    (group_id, json.dumps(list(user_map.values()), ensure_ascii=False)))
-            # 写入缓存, 过期时间为明天 00:00
+                    (group_id, self._users_json(user_map)))
             self._group_users_cache[group_id] = (self._tomorrow_ts(), user_map)
         except Exception as e:
             report_error(FRAMEWORK, "群用户列表更新", e,

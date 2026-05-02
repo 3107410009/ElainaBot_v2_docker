@@ -185,8 +185,15 @@ async def handle_get_chat_history(request: web.Request):
         gid = r.get('group_id', '')
         content = r.get('content', '')
         msg_type = r.get('type', '')
-        plugin_name = r.get('plugin_name', '')
-        is_bot = msg_type == 'plugin' or (content.startswith(('[Bot回复]', '[Bot:')) if content else False)
+
+        # 匹配聊天会话
+        if chat_type == 'group':
+            if gid != chat_id:
+                continue
+        elif uid != chat_id or gid:
+            continue
+
+        is_bot = msg_type in ('plugin', 'onebot_send') or (content.startswith(('[Bot回复]', '[Bot:')) if content else False)
 
         # 清理旧的 [Bot:xxx] 前缀
         if content.startswith('[Bot:'):
@@ -194,25 +201,19 @@ async def handle_get_chat_history(request: web.Request):
             if idx > 0:
                 content = content[idx + 2:]
 
-        if chat_type == 'group' and gid == chat_id:
-            matched = True
-        elif chat_type == 'user' and uid == chat_id and not gid:
-            matched = True
-        else:
-            matched = False
-
-        if matched:
-            messages.append({
-                'id': r.get('id', len(messages)),
-                'user_id': uid,
-                'appid': r.get('appid', ''),
-                'bot_qq': r.get('bot_qq', '') if is_bot else '',
-                'nickname': (r.get('bot_name', '') or 'Bot') if is_bot else _get_nickname(uid),
-                'content': content,
-                'timestamp': r.get('timestamp', ''),
-                'is_self': is_bot,
-                'source': 'web_panel' if plugin_name == 'WebPanel' else '',
-            })
+        plugin_name = r.get('plugin_name', '')
+        source = 'web_panel' if plugin_name == 'WebPanel' else ('onebot' if msg_type in ('onebot_send', 'onebot_recv') else '')
+        messages.append({
+            'id': r.get('id', len(messages)),
+            'user_id': uid,
+            'appid': r.get('appid', ''),
+            'bot_qq': r.get('bot_qq', '') if is_bot else '',
+            'nickname': (r.get('bot_name', '') or 'Bot') if is_bot else _get_nickname(uid),
+            'content': content,
+            'timestamp': r.get('timestamp', ''),
+            'is_self': is_bot,
+            'source': source,
+        })
 
     # 取最近一条非 bot 消息的 message_id 用于发送回复 (仅当天, 避免过期)
     last_msg_id = ''

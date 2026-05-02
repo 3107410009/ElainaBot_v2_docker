@@ -41,12 +41,34 @@ def _render_yaml_lines(lines, data, comments, indent=0):
             lines.append(f"{prefix}{key}:")
             actual_comments = sub_comments if isinstance(sub_comments, dict) else {}
             _render_yaml_lines(lines, value, actual_comments, indent + 1)
+        elif isinstance(value, list):
+            _render_yaml_list(lines, key, value, comment, prefix, indent)
         else:
             yaml_val = _yaml_scalar(value)
             if comment:
                 lines.append(f"{prefix}{key}: {yaml_val}  # {comment}")
             else:
                 lines.append(f"{prefix}{key}: {yaml_val}")
+
+
+def _render_yaml_list(lines, key, value, comment, prefix, indent):
+    """渲染列表值: 空列表用 [], 列表-字典用 block 风格"""
+    if comment:
+        lines.append(f"{prefix}# {comment}")
+    if not value:
+        lines.append(f"{prefix}{key}: []")
+        return
+    lines.append(f"{prefix}{key}:")
+    child = '  ' * (indent + 1)
+    for item in value:
+        if isinstance(item, dict):
+            first = True
+            for k, v in item.items():
+                tag = '- ' if first else '  '
+                lines.append(f"{child}{tag}{k}: {_yaml_scalar(v)}")
+                first = False
+        else:
+            lines.append(f"{child}- {_yaml_scalar(item)}")
 
 
 class BaseContext:

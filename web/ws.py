@@ -21,28 +21,35 @@ async def broadcast(msg_type: str, data: dict):
     if not _clients:
         return
     payload = json.dumps({'type': msg_type, 'data': data}, ensure_ascii=False, default=str)
-    closed = []
-    for ws in _clients:
+    dead = set()
+    for ws in list(_clients):
         try:
             await ws.send_str(payload)
         except Exception:
-            closed.append(ws)
-    for ws in closed:
-        _clients.discard(ws)
+            dead.add(ws)
+    _clients.difference_update(dead)
+
+
+def _schedule_broadcast(msg_type: str, data: dict):
+    """安全调度广播任务 (无事件循环时静默忽略)"""
+    if not _clients:
+        return
+    try:
+        asyncio.get_running_loop().create_task(broadcast(msg_type, data))
+    except RuntimeError:
+        pass
 
 
 def push_log(log_type: str, entry: dict):
     """实时推送日志到面板 (不缓存, 仅广播)"""
     if 'timestamp' not in entry:
         entry['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    if _clients:
-        asyncio.ensure_future(broadcast('new_log', {'log_type': log_type, **entry}))
+    _schedule_broadcast('new_log', {'log_type': log_type, **entry})
 
 
 def push_system_info(data: dict):
     """推送系统信息更新"""
-    if _clients:
-        asyncio.ensure_future(broadcast('system_info', data))
+    _schedule_broadcast('system_info', data)
 
 
 # ==================== WebSocket 处理器 ====================

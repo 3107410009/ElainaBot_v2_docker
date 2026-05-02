@@ -461,12 +461,9 @@ class MessageSender:
         elif msg_id:
             payload['msg_id'] = msg_id
 
-        if target_group_id:
-            endpoint = f"/v2/groups/{target_group_id}/messages"
-        elif target_user_id:
-            endpoint = f"/v2/users/{target_user_id}/messages"
-        else:
-            endpoint = event.reply_endpoint
+        endpoint = (f"/v2/groups/{target_group_id}/messages" if target_group_id
+                    else f"/v2/users/{target_user_id}/messages" if target_user_id
+                    else event.reply_endpoint)
         if not endpoint:
             return None
 

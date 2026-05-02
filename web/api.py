@@ -241,52 +241,48 @@ def _iter_bots(appid_filter=''):
     return list(_bot_manager._bots.items())
 
 
+_SEND_TYPES = frozenset(('plugin', 'onebot_send'))
+_LOG_SQL = "SELECT * FROM log ORDER BY id DESC LIMIT 50"
+
+
+def _query_bot_logs(log_type, appid_filter, post_fn=None):
+    """从各机器人 SQLite 查询日志, 返回按时间排序的最近 50 条"""
+    results = []
+    for appid, inst in _iter_bots(appid_filter):
+        try:
+            rows = inst.log_service.query(log_type, _LOG_SQL)
+            for r in rows:
+                r['appid'] = appid
+                r['bot_name'] = getattr(inst, 'name', appid)
+                if post_fn:
+                    post_fn(r)
+            results.extend(rows)
+        except Exception:
+            pass
+    results.sort(key=lambda r: r.get('timestamp', ''))
+    return results[-50:]
+
+
 async def handle_recent_logs(request: web.Request):
     """最近日志 — 全部从 SQLite 读取, 不使用内存缓冲"""
     from core.storage.log import SharedLogService
     appid_filter = request.query.get('appid', '')
 
-    # 消息日志: 各机器人 SQLite
-    messages = []
-    for appid, inst in _iter_bots(appid_filter):
-        try:
-            rows = inst.log_service.query(
-                'message', "SELECT * FROM log ORDER BY id DESC LIMIT 50")
-            for r in rows:
-                r['appid'] = appid
-                r['bot_name'] = getattr(inst, 'name', appid)
-                if r.get('type') == 'plugin':
-                    r['is_bot'] = True
-                    r['direction'] = 'send'
-                else:
-                    r['direction'] = 'receive'
-            messages.extend(rows)
-        except Exception:
-            pass
-    messages.sort(key=lambda r: r.get('timestamp', ''))
-    messages = messages[-50:]
+    def _tag_direction(r):
+        if r.get('type') in _SEND_TYPES:
+            r['is_bot'] = True
+            r['direction'] = 'send'
+        else:
+            r['direction'] = 'receive'
 
-    # 生命周期日志: 各机器人 SQLite
-    lifecycle = []
-    for appid, inst in _iter_bots(appid_filter):
-        try:
-            rows = inst.log_service.query(
-                'lifecycle', "SELECT * FROM log ORDER BY id DESC LIMIT 50")
-            for r in rows:
-                r['appid'] = appid
-                r['bot_name'] = getattr(inst, 'name', appid)
-            lifecycle.extend(rows)
-        except Exception:
-            pass
-    lifecycle.sort(key=lambda r: r.get('timestamp', ''))
-    lifecycle = lifecycle[-50:]
+    messages = _query_bot_logs('message', appid_filter, _tag_direction)
+    lifecycle = _query_bot_logs('lifecycle', appid_filter)
 
-    # 框架/错误: 通用日志库 SQLite
     shared = SharedLogService._instance
     if shared:
-        framework = shared.query('framework', "SELECT * FROM log ORDER BY id DESC LIMIT 50")
+        framework = shared.query('framework', _LOG_SQL)
         framework.reverse()
-        errors = shared.query('error', "SELECT * FROM log ORDER BY id DESC LIMIT 50")
+        errors = shared.query('error', _LOG_SQL)
         errors.reverse()
     else:
         framework = []
