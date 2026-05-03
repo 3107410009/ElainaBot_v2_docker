@@ -512,7 +512,7 @@ class FrameworkUpdater:
 
     @staticmethod
     def _trigger_restart():
-        """通用重启: 通过 BotManager 的 restart 循环重启, 兼容 Docker/裸机/任何环境"""
+        """更新后重启: Windows 用外部脚本, Linux/Docker 走内部重启 + os.execv"""
         try:
             from core.bot import _bot_manager_ref
             if _bot_manager_ref:
