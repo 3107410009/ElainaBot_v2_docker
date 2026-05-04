@@ -134,9 +134,9 @@ async def handle_start_update(request: web.Request):
 async def handle_get_mirrors(request: web.Request):
     """获取镜像列表 (含缓存的测速结果)"""
     try:
-        from web.tools.updater import GITHUB_FILE_MIRRORS, get_fast_mirrors, _mirror_cache
+        from web.tools.updater import GITHUB_FILE_MIRRORS, _load_mirror_cache
         updater = _get_updater()
-        cached = _mirror_cache or []
+        cached = _load_mirror_cache()
         return web.json_response({'success': True, 'data': {
             'mirrors': [m for m in GITHUB_FILE_MIRRORS],
             'fast_mirrors': cached,
@@ -174,13 +174,12 @@ async def handle_test_mirrors(request: web.Request):
             except ConnectionResetError:
                 return resp
 
-    # 更新缓存
-    from web.tools import updater as _upd
-    _upd._mirror_cache = sorted(
+    # 保存测速结果到磁盘
+    from web.tools.updater import _save_mirror_cache
+    _save_mirror_cache(sorted(
         [r for r in all_results if r['success']],
         key=lambda r: r['latency']
-    )
-    _upd._mirror_cache_ts = _time.time()
+    ))
 
     # 发送结束标记
     try:

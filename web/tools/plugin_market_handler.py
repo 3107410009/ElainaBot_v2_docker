@@ -15,14 +15,12 @@ log = logging.getLogger('ElainaBot.web.market')
 
 # ==================== GitHub 插件库配置 ====================
 PLUGIN_REPO = 'ElainaCore/Elaina-plugins'
-PLUGIN_JSON_RAW = f'https://raw.githubusercontent.com/{PLUGIN_REPO}/main/plugins.json'
-# 镜像列表 (从 updater 复用)
-_PLUGIN_JSON_MIRRORS = [
-    PLUGIN_JSON_RAW,  # 直连
-    f'https://ghproxy.cc/https://raw.githubusercontent.com/{PLUGIN_REPO}/main/plugins.json',
-    f'https://gh-proxy.com/https://raw.githubusercontent.com/{PLUGIN_REPO}/main/plugins.json',
-    f'https://gh.llkk.cc/https://raw.githubusercontent.com/{PLUGIN_REPO}/main/plugins.json',
-    f'https://gh.idayer.com/https://raw.githubusercontent.com/{PLUGIN_REPO}/main/plugins.json',
+_PLUGIN_JSON_RAW = f'https://raw.githubusercontent.com/{PLUGIN_REPO}/main/plugins.json'
+_FALLBACK_MIRRORS = [
+    f'https://ghproxy.cc/{_PLUGIN_JSON_RAW}',
+    f'https://gh-proxy.com/{_PLUGIN_JSON_RAW}',
+    f'https://gh.llkk.cc/{_PLUGIN_JSON_RAW}',
+    f'https://gh.idayer.com/{_PLUGIN_JSON_RAW}',
 ]
 
 _base_dir = ''
@@ -40,17 +38,48 @@ def _plugins_dir():
     return os.path.join(_base_dir, 'plugins')
 
 
+def _ranked_mirror_urls(raw_url):
+    """按磁盘缓存排名生成 URL 列表, 缓存为空时用兜底镜像"""
+    from web.tools.updater import _load_mirror_cache, _build_mirror_url
+    cached = _load_mirror_cache()
+    if cached:
+        urls = [_build_mirror_url(raw_url, m['mirror'] if isinstance(m, dict) else m) for m in cached]
+    else:
+        urls = list(_FALLBACK_MIRRORS)
+    if raw_url not in urls:
+        urls.append(raw_url)
+    return urls
+
+
 async def _fetch_plugin_json(force=False):
-    """从 GitHub 获取 plugins.json, 带缓存和镜像回退"""
+    """从 GitHub 获取 plugins.json, 按镜像排名依次尝试"""
     global _plugin_cache, _plugin_cache_ts
     now = time.time()
     if not force and _plugin_cache and (now - _plugin_cache_ts) < _PLUGIN_CACHE_TTL:
         return _plugin_cache
 
+    raw_url = f'https://raw.githubusercontent.com/{PLUGIN_REPO}/main/plugins.json'
     headers = {'User-Agent': 'ElainaBot/1.0'}
     timeout = _aiohttp.ClientTimeout(total=10)
     async with _aiohttp.ClientSession() as session:
-        for url in _PLUGIN_JSON_MIRRORS:
+        for url in _ranked_mirror_urls(raw_url):
+            try:
+                async with session.get(url, headers=headers, timeout=timeout,
+                                       ssl=False, allow_redirects=True) as resp:
+                    if resp.status == 200:
+                        body = await resp.read()
+                        if body[:1] in (b'[', b'{'):
+                            data = json.loads(body)
+                            _plugin_cache = data
+                            _plugin_cache_ts = now
+                            return data
+            except Exception:
+                continue
+    # 全部失败 → 重新测速后再试一次
+    from web.tools.updater import get_fast_mirrors
+    await get_fast_mirrors(force=True)
+    async with _aiohttp.ClientSession() as session:
+        for url in _ranked_mirror_urls(raw_url):
             try:
                 async with session.get(url, headers=headers, timeout=timeout,
                                        ssl=False, allow_redirects=True) as resp:
@@ -251,21 +280,9 @@ async def handle_market_install(request: web.Request):
 # ==================== 下载辅助 ====================
 
 async def _download_file(url, timeout=60):
-    """通过镜像或直连下载文件"""
-    from web.tools.updater import GITHUB_FILE_MIRRORS, _build_mirror_url
-    urls = [url]
-    if 'github.com' in url or 'githubusercontent.com' in url:
-        # 取缓存的快镜像, 无缓存则用前 3 个默认镜像
-        try:
-            from web.tools.updater import _mirror_cache
-            mirrors = _mirror_cache or []
-        except Exception:
-            mirrors = []
-        for m in (mirrors or GITHUB_FILE_MIRRORS)[:3]:
-            mirror = m['mirror'] if isinstance(m, dict) else m
-            if mirror:
-                urls.append(_build_mirror_url(url, mirror))
-
+    """按镜像排名下载, 全失败重新测速后再试"""
+    is_gh = 'github.com' in url or 'githubusercontent.com' in url
+    urls = _ranked_mirror_urls(url) if is_gh else [url]
     async with _aiohttp.ClientSession() as session:
         for u in urls:
             try:
@@ -274,6 +291,20 @@ async def _download_file(url, timeout=60):
                                        headers={'User-Agent': 'ElainaBot/1.0'}) as resp:
                     if resp.status == 200:
                         return await resp.read()
+            except Exception:
+                continue
+    # 全失败 → 重新测速后再试
+    if is_gh:
+        from web.tools.updater import get_fast_mirrors
+        await get_fast_mirrors(force=True)
+        for u in _ranked_mirror_urls(url):
+            try:
+                async with _aiohttp.ClientSession() as session:
+                    async with session.get(u, timeout=_aiohttp.ClientTimeout(total=timeout),
+                                           ssl=False, allow_redirects=True,
+                                           headers={'User-Agent': 'ElainaBot/1.0'}) as resp:
+                        if resp.status == 200:
+                            return await resp.read()
             except Exception:
                 continue
     return None

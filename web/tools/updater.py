@@ -78,12 +78,35 @@ GITHUB_FILE_MIRRORS = [
     'https://gh.noki.icu/',
 ]
 
-# ==================== 镜像缓存 ====================
+# ==================== 镜像缓存  ====================
 
-_mirror_cache = None        # list[dict] 按延迟排序的可用镜像
-_mirror_cache_ts = 0
-_mirror_testing = None       # asyncio.Task
-_MIRROR_CACHE_TTL = 30 * 60  # 30分钟
+_mirror_testing = None  # asyncio.Task (防重复测速)
+
+
+def _mirror_cache_path():
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', 'mirror_cache.json')
+
+
+def _save_mirror_cache(mirrors):
+    try:
+        path = _mirror_cache_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({'mirrors': mirrors}, f)
+    except Exception:
+        pass
+
+
+def _load_mirror_cache():
+    """读取磁盘缓存 (永久有效, 全失败时由调用方重新测速)"""
+    try:
+        path = _mirror_cache_path()
+        if not os.path.isfile(path):
+            return []
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f).get('mirrors', [])
+    except Exception:
+        return []
 
 
 def _build_mirror_url(original_url, mirror):
@@ -123,25 +146,29 @@ async def test_all_mirrors(timeout=3):
 
 
 async def get_fast_mirrors(force=False):
-    """获取按延迟排序的可用镜像列表 (缓存 30 分钟)"""
-    global _mirror_cache, _mirror_cache_ts, _mirror_testing
-    now = time.time()
-    if not force and _mirror_cache and (now - _mirror_cache_ts) < _MIRROR_CACHE_TTL:
-        return _mirror_cache
+    """获取按延迟排序的可用镜像列表 (磁盘缓存 30 分钟)"""
+    global _mirror_testing
+    if not force:
+        cached = _load_mirror_cache()
+        if cached:
+            return cached
     if _mirror_testing and not _mirror_testing.done():
         return await _mirror_testing
     _mirror_testing = asyncio.ensure_future(test_all_mirrors())
     results = await _mirror_testing
-    _mirror_cache = [r for r in results if r['success']]
-    _mirror_cache_ts = now
+    ok = [r for r in results if r['success']]
     _mirror_testing = None
-    return _mirror_cache
+    _save_mirror_cache(ok)
+    return ok
 
 
 def clear_mirror_cache():
-    global _mirror_cache, _mirror_cache_ts
-    _mirror_cache = None
-    _mirror_cache_ts = 0
+    try:
+        path = _mirror_cache_path()
+        if os.path.isfile(path):
+            os.remove(path)
+    except Exception:
+        pass
 
 
 # 默认跳过的路径
@@ -273,12 +300,12 @@ class FrameworkUpdater:
         self._save_setting('custom_mirror', self.custom_mirror)
 
     async def _pick_download_url(self, original_url):
-        """从缓存的快速镜像中选最快的可用 URL"""
+        """从磁盘缓存的排名中选最快的镜像 URL"""
         if self.custom_mirror:
             return _build_mirror_url(original_url, self.custom_mirror)
-        mirrors = await get_fast_mirrors()
-        if mirrors:
-            return _build_mirror_url(original_url, mirrors[0]['mirror'])
+        cached = _load_mirror_cache()
+        if cached:
+            return _build_mirror_url(original_url, cached[0]['mirror'])
         return original_url
 
     # ==================== 检查更新 ====================
