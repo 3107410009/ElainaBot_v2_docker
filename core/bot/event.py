@@ -10,7 +10,8 @@ from datetime import datetime, timedelta
 from core.base.config import cfg
 from core.base.logger import get_logger, FRAMEWORK, report_error
 from core.message.event import (
-    GROUP_ADD_ROBOT, GROUP_DEL_ROBOT, FRIEND_ADD, FRIEND_DEL, MESSAGE_TYPES,
+    GROUP_ADD_ROBOT, GROUP_DEL_ROBOT, FRIEND_ADD, FRIEND_DEL,
+    MESSAGE_TYPES, LIFECYCLE_TYPES, INTERACTION_CREATE,
 )
 from core.message.parsers import swap_ids
 
@@ -84,6 +85,12 @@ class EventHandlerMixin:
         if lc:
             await lc(self, bot, event)
             return
+
+        # 未预设事件 → 记录到错误日志
+        if et not in MESSAGE_TYPES and et not in LIFECYCLE_TYPES and et != INTERACTION_CREATE:
+            raw_json = json.dumps(event.raw, ensure_ascii=False)
+            report_error(FRAMEWORK, "未知事件", f"收到未预设事件类型: {et}",
+                         context={'appid': appid, 'event_type': et, 'raw': raw_json})
 
         _t0 = time.time()
 
