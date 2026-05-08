@@ -180,22 +180,6 @@ http://localhost:5200/web/?token=admin
 
 在面板中填写机器人的 `APPID` 和 `Secret` 后即可正常运行。
 
-### 常用命令
-
-```bash
-# 查看实时日志
-docker compose logs -f
-
-# 停止
-docker compose down
-
-# 重启
-docker compose restart
-
-# 更新到最新镜像
-docker compose pull && docker compose up -d
-```
-
 ### 数据持久化说明
 
 以下目录已通过 Volume 挂载到宿主机，容器删除后数据不会丢失：
