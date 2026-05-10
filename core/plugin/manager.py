@@ -363,26 +363,24 @@ class PluginManager:
     @classmethod
     def _import_plugin(cls, name, plugin_dir, entry_path):
         """动态导入插件目录 (预注册包层级, 兼容 Python 3.9+)"""
-        plugins_dir = os.path.dirname(plugin_dir)
         mod_name = f"plugins.{name}"
-        parent = cls._register_pkg('plugins', plugins_dir)
-        sub_dirs = [(s, os.path.join(plugin_dir, s))
-                    for s in os.listdir(plugin_dir)
-                    if os.path.isdir(os.path.join(plugin_dir, s))
-                    and not s.startswith(('_', '.'))]
-        for sub, sub_path in sub_dirs:
-            sub_mod = cls._register_pkg(f'{mod_name}.{sub}', sub_path)
-            setattr(sys.modules.get(mod_name, parent), sub, sub_mod)
+        parent = cls._register_pkg('plugins', os.path.dirname(plugin_dir))
+        pkg = cls._register_pkg(mod_name, plugin_dir)
+        # scandir: 单次系统调用, is_dir() 用缓存 stat, .path 免 join
+        subs = []
+        with os.scandir(plugin_dir) as it:
+            for e in it:
+                if e.is_dir() and not e.name.startswith(('_', '.')):
+                    sub = cls._register_pkg(f'{mod_name}.{e.name}', e.path)
+                    setattr(pkg, e.name, sub)
+                    subs.append((e.name, sub))
         spec = importlib.util.spec_from_file_location(
-            mod_name, entry_path,
-            submodule_search_locations=[plugin_dir])
+            mod_name, entry_path, submodule_search_locations=[plugin_dir])
         module = importlib.util.module_from_spec(spec)
         sys.modules[mod_name] = module
         setattr(parent, name, module)
-        for sub, _ in sub_dirs:
-            sub_mod = sys.modules.get(f'{mod_name}.{sub}')
-            if sub_mod:
-                setattr(module, sub, sub_mod)
+        for s, sub in subs:
+            setattr(module, s, sub)
         spec.loader.exec_module(module)
         return module
 

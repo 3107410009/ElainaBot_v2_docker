@@ -124,33 +124,35 @@ async def handle_get_chart_data(request: web.Request):
         day_fadd = 0
         day_frem = 0
 
+        is_today = (d == today_date)
         for _appid, inst in _iter_bots(appid_filter):
-            # 从 message.db 查消息量 + 活跃
-            try:
-                rows = inst.log_service.query(
-                    'message',
-                    "SELECT COUNT(*) as cnt, "
-                    "COUNT(CASE WHEN group_id = '' OR group_id = 'c2c' THEN 1 END) as priv "
-                    "FROM log WHERE user_id != ''",
-                    date=date_str)
-                if rows:
-                    day_total += rows[0].get('cnt', 0)
-                    day_private += rows[0].get('priv', 0)
-                uid_rows = inst.log_service.query(
-                    'message',
-                    "SELECT DISTINCT user_id FROM log WHERE user_id != ''",
-                    date=date_str)
-                for r in uid_rows:
-                    day_users.add(r.get('user_id', ''))
-                gid_rows = inst.log_service.query(
-                    'message',
-                    "SELECT DISTINCT group_id FROM log WHERE group_id != '' AND group_id != 'c2c'",
-                    date=date_str)
-                for r in gid_rows:
-                    day_groups.add(r.get('group_id', ''))
-            except Exception:
-                pass
-            # 从 dau.db 查事件
+            if is_today:
+                # 今日: 实时读 message.db
+                try:
+                    rows = inst.log_service.query(
+                        'message',
+                        "SELECT COUNT(*) as cnt, "
+                        "COUNT(CASE WHEN group_id = '' OR group_id = 'c2c' THEN 1 END) as priv "
+                        "FROM log WHERE user_id != ''",
+                        date=date_str)
+                    if rows:
+                        day_total += rows[0].get('cnt', 0)
+                        day_private += rows[0].get('priv', 0)
+                    uid_rows = inst.log_service.query(
+                        'message',
+                        "SELECT DISTINCT user_id FROM log WHERE user_id != ''",
+                        date=date_str)
+                    for r in uid_rows:
+                        day_users.add(r.get('user_id', ''))
+                    gid_rows = inst.log_service.query(
+                        'message',
+                        "SELECT DISTINCT group_id FROM log WHERE group_id != '' AND group_id != 'c2c'",
+                        date=date_str)
+                    for r in gid_rows:
+                        day_groups.add(r.get('group_id', ''))
+                except Exception:
+                    pass
+            # 历史 / 事件: 从 dau.db
             try:
                 dau_rows = inst.log_service.query(
                     'dau', "SELECT * FROM log WHERE date=?", (date_str,))
@@ -160,6 +162,11 @@ async def handle_get_chart_data(request: web.Request):
                     day_leave += dd.get('group_leave_count', 0)
                     day_fadd += dd.get('friend_add_count', 0)
                     day_frem += dd.get('friend_remove_count', 0)
+                    if not is_today:
+                        day_total += dd.get('total_messages', 0)
+                        day_private += dd.get('private_messages', 0)
+                        day_users.update(range(dd.get('active_users', 0)))
+                        day_groups.update(range(dd.get('active_groups', 0)))
             except Exception:
                 pass
 
@@ -215,68 +222,71 @@ def _gather_stats(force=False, selected_date='', appid_filter=''):
     event_stats = {'group_join_count': 0, 'group_leave_count': 0,
                    'friend_add_count': 0, 'friend_remove_count': 0}
 
+    is_today = (date == now.strftime('%Y-%m-%d'))
+
     if _bot_manager:
         for appid, inst in _iter_bots(appid_filter):
-            try:
-                rows = inst.log_service.query(
-                    'message',
-                    "SELECT COUNT(*) as cnt, "
-                    "COUNT(DISTINCT CASE WHEN user_id != '' THEN user_id END) as users, "
-                    "COUNT(DISTINCT CASE WHEN group_id != '' AND group_id != 'c2c' THEN group_id END) as groups_, "
-                    "COUNT(CASE WHEN group_id = 'c2c' OR group_id = '' THEN 1 END) as private "
-                    "FROM log",
-                    date=date)
-                if rows:
-                    r = rows[0]
-                    total_messages += r.get('cnt', 0)
-                    private_messages += r.get('private', 0)
+            if is_today:
+                # 今日: 实时读 message.db
+                try:
+                    rows = inst.log_service.query(
+                        'message',
+                        "SELECT COUNT(*) as cnt, "
+                        "COUNT(DISTINCT CASE WHEN user_id != '' THEN user_id END) as users, "
+                        "COUNT(DISTINCT CASE WHEN group_id != '' AND group_id != 'c2c' THEN group_id END) as groups_, "
+                        "COUNT(CASE WHEN group_id = 'c2c' OR group_id = '' THEN 1 END) as private "
+                        "FROM log",
+                        date=date)
+                    if rows:
+                        r = rows[0]
+                        total_messages += r.get('cnt', 0)
+                        private_messages += r.get('private', 0)
 
-                uid_rows = inst.log_service.query(
-                    'message', "SELECT DISTINCT user_id FROM log WHERE user_id != ''",
-                    date=date)
-                gid_rows = inst.log_service.query(
-                    'message', "SELECT DISTINCT group_id FROM log WHERE group_id != '' AND group_id != 'c2c'",
-                    date=date)
-                for ur in uid_rows:
-                    active_users.add(ur.get('user_id', ''))
-                for gr in gid_rows:
-                    active_groups.add(gr.get('group_id', ''))
+                    uid_rows = inst.log_service.query(
+                        'message', "SELECT DISTINCT user_id FROM log WHERE user_id != ''",
+                        date=date)
+                    gid_rows = inst.log_service.query(
+                        'message', "SELECT DISTINCT group_id FROM log WHERE group_id != '' AND group_id != 'c2c'",
+                        date=date)
+                    for ur in uid_rows:
+                        active_users.add(ur.get('user_id', ''))
+                    for gr in gid_rows:
+                        active_groups.add(gr.get('group_id', ''))
 
-                # 每小时消息分布 (在主循环后统一聚合)
+                    # Top 群
+                    g_rows = inst.log_service.query(
+                        'message',
+                        "SELECT group_id, COUNT(*) AS c FROM log "
+                        "WHERE group_id != '' AND group_id != 'c2c' GROUP BY group_id ORDER BY c DESC LIMIT 10",
+                        date=date)
+                    for r in g_rows:
+                        gid = r.get('group_id', '')
+                        if gid:
+                            group_msg[gid] = group_msg.get(gid, 0) + r.get('c', 0)
 
-                # Top 群
-                g_rows = inst.log_service.query(
-                    'message',
-                    "SELECT group_id, COUNT(*) AS c FROM log "
-                    "WHERE group_id != '' AND group_id != 'c2c' GROUP BY group_id ORDER BY c DESC LIMIT 10",
-                    date=date)
-                for r in g_rows:
-                    gid = r.get('group_id', '')
-                    if gid:
-                        group_msg[gid] = group_msg.get(gid, 0) + r.get('c', 0)
+                    # Top 用户
+                    u_rows = inst.log_service.query(
+                        'message',
+                        "SELECT user_id, COUNT(*) AS c FROM log WHERE user_id != '' GROUP BY user_id ORDER BY c DESC LIMIT 10",
+                        date=date)
+                    for r in u_rows:
+                        uid = r.get('user_id', '')
+                        if uid:
+                            user_msg[uid] = user_msg.get(uid, 0) + r.get('c', 0)
 
-                # Top 用户
-                u_rows = inst.log_service.query(
-                    'message',
-                    "SELECT user_id, COUNT(*) AS c FROM log WHERE user_id != '' GROUP BY user_id ORDER BY c DESC LIMIT 10",
-                    date=date)
-                for r in u_rows:
-                    uid = r.get('user_id', '')
-                    if uid:
-                        user_msg[uid] = user_msg.get(uid, 0) + r.get('c', 0)
+                    # Top 命令
+                    c_rows = inst.log_service.query(
+                        'message',
+                        "SELECT plugin_name, COUNT(*) AS c FROM log WHERE plugin_name != '' GROUP BY plugin_name ORDER BY c DESC LIMIT 10",
+                        date=date)
+                    for r in c_rows:
+                        cmd = r.get('plugin_name', '')
+                        if cmd:
+                            cmd_msg[cmd] = cmd_msg.get(cmd, 0) + r.get('c', 0)
+                except Exception:
+                    pass
 
-                # Top 命令
-                c_rows = inst.log_service.query(
-                    'message',
-                    "SELECT plugin_name, COUNT(*) AS c FROM log WHERE plugin_name != '' GROUP BY plugin_name ORDER BY c DESC LIMIT 10",
-                    date=date)
-                for r in c_rows:
-                    cmd = r.get('plugin_name', '')
-                    if cmd:
-                        cmd_msg[cmd] = cmd_msg.get(cmd, 0) + r.get('c', 0)
-            except Exception:
-                pass
-
+            # 历史 / 事件: 从 dau.db
             try:
                 dau_rows = inst.log_service.query(
                     'dau', "SELECT * FROM log WHERE date=?", (date,))
@@ -286,6 +296,11 @@ def _gather_stats(force=False, selected_date='', appid_filter=''):
                     event_stats['group_leave_count'] += d.get('group_leave_count', 0)
                     event_stats['friend_add_count'] += d.get('friend_add_count', 0)
                     event_stats['friend_remove_count'] += d.get('friend_remove_count', 0)
+                    if not is_today:
+                        total_messages += d.get('total_messages', 0)
+                        private_messages += d.get('private_messages', 0)
+                        active_users.update(range(d.get('active_users', 0)))
+                        active_groups.update(range(d.get('active_groups', 0)))
             except Exception:
                 pass
 
