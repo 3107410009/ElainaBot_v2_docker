@@ -26,7 +26,7 @@
 __module_meta__ = {
     'name': 'Playwright 渲染引擎',
     'description': '异步 Playwright 浏览器渲染, 支持 URL/HTML 截图与 PDF 导出',
-    'version': '1.0.0',
+    'version': '1.1.0',
     'author': 'ElainaBot',
 }
 
@@ -56,7 +56,7 @@ _DEFAULTS = {
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--single-process',
+        '--disable-software-rasterizer',
         '--disable-extensions',
         '--disable-background-networking',
     ],
@@ -101,7 +101,7 @@ class PlaywrightRenderer:
     __slots__ = (
         '_cfg', '_pw', '_browser', '_semaphore',
         '_lock', '_active_pages',
-        '_last_release', '_cleanup_task', '_closed',
+        '_last_release', '_cleanup_task', '_closed', '_last_error',
     )
 
     def __init__(self, cfg):
@@ -114,6 +114,7 @@ class PlaywrightRenderer:
         self._last_release = 0.0
         self._cleanup_task = None
         self._closed = False
+        self._last_error = None
 
     def is_available(self):
         return not self._closed
@@ -162,7 +163,8 @@ class PlaywrightRenderer:
                     self._cleanup_task = asyncio.create_task(self._idle_cleanup_loop())
                 return True
             except Exception as e:
-                log.error(f"浏览器启动失败: {e}")
+                self._last_error = str(e)
+                log.error(f"浏览器启动失败: {e}", exc_info=True)
                 return False
 
     async def _idle_cleanup_loop(self):
@@ -200,15 +202,29 @@ class PlaywrightRenderer:
 
         async with self._semaphore:
             if not await self._ensure_browser():
-                raise RuntimeError("Playwright 浏览器不可用")
+                raise RuntimeError(f"Playwright 浏览器不可用: {self._last_error or '未知原因'}")
 
             self._active_pages += 1
             vw = (viewport[0] if viewport else self._cfg.get('default_viewport_width', 1280))
             vh = (viewport[1] if viewport else self._cfg.get('default_viewport_height', 720))
 
-            page = await self._browser.new_page(
-                viewport={'width': vw, 'height': vh},
-            )
+            try:
+                page = await self._browser.new_page(
+                    viewport={'width': vw, 'height': vh},
+                )
+            except Exception as e:
+                if "Connection closed" in str(e) or not (self._browser and self._browser.is_connected()):
+                    log.warning(f"浏览器连接已断开, 尝试重启: {e}")
+                    await self._close_browser()
+                    if not await self._ensure_browser():
+                        self._active_pages -= 1
+                        raise RuntimeError(f"Playwright 浏览器重启失败: {self._last_error or '未知原因'}")
+                    page = await self._browser.new_page(
+                        viewport={'width': vw, 'height': vh},
+                    )
+                else:
+                    self._active_pages -= 1
+                    raise
             page.set_default_timeout(self._cfg.get('default_timeout', 30000))
             try:
                 yield page

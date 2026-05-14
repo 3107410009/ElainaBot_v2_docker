@@ -100,13 +100,25 @@ class OneBotWSServer:
 
     # ==================== 反向 WS (客户端) ====================
 
+    @staticmethod
+    def _normalize_ws_url(url: str) -> str:
+        """将 http(s):// 转为 ws(s)://, 无 scheme 则补 ws://"""
+        u = url.strip()
+        if u.startswith('http://'):
+            u = 'ws://' + u[7:]
+        elif u.startswith('https://'):
+            u = 'wss://' + u[8:]
+        elif not u.startswith(('ws://', 'wss://')):
+            u = 'ws://' + u
+        return u
+
     async def start_reverse(self):
         """启动所有反向 WS 连接"""
         if not self._reverse_entries:
             return
         self._reverse_session = aiohttp.ClientSession()
         for entry in self._reverse_entries:
-            url = entry['url'].strip()
+            url = self._normalize_ws_url(entry['url'])
             appid = entry.get('appid', '')
             if url:
                 task = asyncio.create_task(self._reverse_ws_loop(url, appid))

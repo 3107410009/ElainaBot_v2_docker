@@ -101,9 +101,9 @@ class OneBotAdapter:
 
         # 5. 解析 reverse_ws_urls [{url, appid}]
         reverse_entries = [
-            {'url': e.get('url', ''), 'appid': str(e.get('appid', ''))}
+            {'url': str(e.get('url', '')), 'appid': str(e.get('appid', ''))}
             for e in (self.cfg.get('reverse_ws_urls') or [])
-            if isinstance(e, dict) and e.get('url', '').strip()
+            if isinstance(e, dict) and str(e.get('url', '')).strip()
         ]
 
         self.ws_server = OneBotWSServer(
@@ -444,7 +444,7 @@ class OneBotAdapter:
                 'type': 'onebot_send',
                 'user_id': uid, 'group_id': gid,
                 'content': content, 'raw_message': raw,
-                'plugin_name': 'onebot_adapter',
+                'plugin_name': 'onebot_adapter', 'direction': 'send',
             })
         self._push_ws(user_id=uid, group_id=gid, content=content, is_bot=True, direction='send')
 
@@ -461,7 +461,7 @@ class OneBotAdapter:
                 'group_id': event.group_id or '',
                 'content': ob_event.get('raw_message', ''),
                 'raw_message': raw,
-                'plugin_name': 'onebot_adapter',
+                'plugin_name': 'onebot_adapter', 'direction': 'receive',
             })
 
     def _get_sender(self, appid: str = ''):

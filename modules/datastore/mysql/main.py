@@ -98,7 +98,12 @@ class MySQLPool:
             return 0
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
+                is_ddl = sql.lstrip()[:6].upper() in ('CREATE', 'ALTER ', 'DROP T')
+                if is_ddl:
+                    await cur.execute("SET sql_notes=0")
                 rows = await cur.execute(sql, params)
+                if is_ddl:
+                    await cur.execute("SET sql_notes=1")
                 if not conn.get_autocommit():
                     await conn.commit()
                 return rows
@@ -151,9 +156,9 @@ class MySQLPool:
         cols = list(data.keys())
         placeholders = ', '.join(['%s'] * len(cols))
         update_cols = [c for c in cols if c not in conflict_columns]
-        sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders})"
+        sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders}) AS new"
         if update_cols:
-            update_clause = ', '.join(f"{c}=VALUES({c})" for c in update_cols)
+            update_clause = ', '.join(f"{c}=new.{c}" for c in update_cols)
             sql += f" ON DUPLICATE KEY UPDATE {update_clause}"
         return await self.execute(sql, list(data.values()))
 
