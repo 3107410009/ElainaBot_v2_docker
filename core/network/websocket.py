@@ -206,5 +206,5 @@ class WSClient:
 
     @staticmethod
     def _get_intents():
-        """GUILDS | GUILD_MESSAGE_REACTIONS | DIRECT_MESSAGE | GROUP_AND_C2C | INTERACTION | AUDIT"""
-        return (1 << 0) | (1 << 10) | (1 << 12) | (1 << 25) | (1 << 26) | (1 << 27)
+        """GUILDS | GUILD_MESSAGE_REACTIONS | DIRECT_MESSAGE | GROUP_AND_C2C | INTERACTION | AUDIT | GROUP_MSG_RECEIVE"""
+        return (1 << 0) | (1 << 10) | (1 << 12) | (1 << 25) | (1 << 26) | (1 << 27) | (1 << 30)

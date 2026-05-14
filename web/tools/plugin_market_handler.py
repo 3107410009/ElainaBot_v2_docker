@@ -34,6 +34,33 @@ def set_context(base_dir: str, appid: str = '', robot_qq: str = ''):
     _base_dir = base_dir
 
 
+# ==================== 市场镜像偏好 ====================
+
+def _market_mirror_path():
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', 'market_mirror.json')
+
+
+def _load_market_mirror():
+    try:
+        p = _market_mirror_path()
+        if os.path.isfile(p):
+            with open(p, 'r', encoding='utf-8') as f:
+                return json.load(f).get('mirror', '')
+    except Exception:
+        pass
+    return ''
+
+
+def _save_market_mirror(mirror):
+    try:
+        p = _market_mirror_path()
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, 'w', encoding='utf-8') as f:
+            json.dump({'mirror': mirror}, f)
+    except Exception:
+        pass
+
+
 def _plugins_dir():
     return os.path.join(_base_dir, 'plugins')
 
@@ -258,6 +285,7 @@ async def handle_market_install(request: web.Request):
     item_type = body.get('type', 'plugin')
     file_path = body.get('path', '')
     branch = body.get('branch', 'main')
+    mirror = body.get('mirror', '') or _load_market_mirror()
     if not github_url:
         return web.json_response({'success': False, 'message': '缺少下载地址'}, status=400)
 
@@ -265,13 +293,13 @@ async def handle_market_install(request: web.Request):
         # 模块安装: 从仓库 zip 中提取 modules/<name>/ 子目录
         if item_type == 'module':
             return web.json_response(
-                await _install_module(github_url, item_name, branch))
+                await _install_module(github_url, item_name, branch, mirror=mirror))
 
         # 插件安装: 有 path → 从仓库下载单个文件
         if file_path:
             url = _repo_raw_url(github_url, file_path, branch)
             log.info(f"插件安装 (单文件): {item_name} ← {url}")
-            content = await _download_file(url)
+            content = await _download_file(url, mirror=mirror)
             if content is None:
                 return web.json_response({'success': False, 'message': '文件下载失败, 请检查路径或网络'})
             return web.json_response(_install_py(content, item_name, url))
@@ -284,7 +312,7 @@ async def handle_market_install(request: web.Request):
         else:
             url = _convert_github_url(github_url)
 
-        content = await _download_file(url)
+        content = await _download_file(url, mirror=mirror)
         if content is None:
             return web.json_response({'success': False, 'message': '下载失败, 请检查网络或镜像'})
 
@@ -302,10 +330,14 @@ async def handle_market_install(request: web.Request):
 
 # ==================== 下载辅助 ====================
 
-async def _download_file(url, timeout=60):
-    """按镜像排名下载, 全失败重新测速后再试"""
+async def _download_file(url, timeout=60, mirror=None):
+    """按镜像排名下载, 全失败重新测速后再试; mirror 非空时优先使用指定镜像"""
     is_gh = 'github.com' in url or 'githubusercontent.com' in url
-    urls = _ranked_mirror_urls(url) if is_gh else [url]
+    if mirror and is_gh:
+        from web.tools.updater import _build_mirror_url
+        urls = [_build_mirror_url(url, mirror)] + _ranked_mirror_urls(url)
+    else:
+        urls = _ranked_mirror_urls(url) if is_gh else [url]
     async with _aiohttp.ClientSession() as session:
         for u in urls:
             try:
@@ -504,7 +536,7 @@ def _clean_module_dir(dest_dir):
             os.remove(p)
 
 
-async def _install_module(github_url, module_name, branch='main'):
+async def _install_module(github_url, module_name, branch='main', mirror=None):
     """安装/更新模块
     两种模式自动判断:
       1. 官方模块: 仓库含 modules/<name>/ → 只提取该子目录
@@ -514,7 +546,7 @@ async def _install_module(github_url, module_name, branch='main'):
     url = _github_to_archive(github_url, branch)
     log.info(f"模块安装: {safe} ← {url}")
 
-    content = await _download_file(url)
+    content = await _download_file(url, mirror=mirror)
     if content is None:
         return {'success': False, 'message': '下载失败, 请检查网络或镜像'}
     if content[:4] != b'PK\x03\x04':
@@ -571,6 +603,37 @@ async def _install_module(github_url, module_name, branch='main'):
                     'path': f'modules/{safe}', 'files': len(extracted)}
     except Exception as e:
         return {'success': False, 'message': str(e)}
+
+
+# ==================== 市场镜像 API ====================
+
+async def handle_market_get_mirror(request: web.Request):
+    """获取当前市场镜像偏好 + 可用镜像列表"""
+    from web.tools.updater import GITHUB_FILE_MIRRORS, _load_mirror_cache
+    cached = _load_mirror_cache()
+    return web.json_response({
+        'success': True,
+        'mirror': _load_market_mirror(),
+        'mirrors': list(GITHUB_FILE_MIRRORS),
+        'fast_mirrors': cached,
+    })
+
+
+async def handle_market_set_mirror(request: web.Request):
+    """设置市场镜像偏好"""
+    body = await request.json()
+    mirror = body.get('mirror', '')
+    _save_market_mirror(mirror)
+    return web.json_response({'success': True, 'message': f'镜像已设为: {mirror or "(自动选择)"}'})
+
+
+async def handle_market_test_mirror(request: web.Request):
+    """测试单个镜像延迟"""
+    body = await request.json()
+    mirror = body.get('mirror', '')
+    from web.tools.updater import _test_one_mirror
+    result = await _test_one_mirror(mirror, timeout=5)
+    return web.json_response({'success': True, 'data': result})
 
 
 # ==================== 本地插件管理 ====================

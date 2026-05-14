@@ -121,6 +121,9 @@ def get_routes() -> list:
         web.get('/api/market/local', _(plugin_market_handler.handle_local_plugins)),
         web.post('/api/market/local/read', _(plugin_market_handler.handle_local_plugin_read)),
         web.post('/api/market/local/save', _(plugin_market_handler.handle_local_plugin_save)),
+        web.get('/api/market/mirror', _(plugin_market_handler.handle_market_get_mirror)),
+        web.post('/api/market/mirror', _(plugin_market_handler.handle_market_set_mirror)),
+        web.post('/api/market/mirror/test', _(plugin_market_handler.handle_market_test_mirror)),
 
         # ── OpenAPI ──
         web.post('/api/openapi/start-login', _(openapi_handler.handle_start_login)),
