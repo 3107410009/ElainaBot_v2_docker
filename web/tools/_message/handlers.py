@@ -7,8 +7,9 @@ from datetime import date as _date
 
 from aiohttp import web
 
+import web.tools._message.shared as _shared
 from web.tools._message.shared import (
-    _get_nickname, _batch_get_nicknames, _get_bot, _bot_manager,
+    _get_nickname, _batch_get_nicknames, _get_bot,
 )
 from web.tools._message.query import (
     _query_chat_messages_sync, _query_older_messages_sync, _aggregate_chats_sync,
@@ -191,7 +192,7 @@ async def handle_send_message(request: web.Request):
         media_file_type: 富媒体文件类型 1=图片 2=视频 3=语音 4=文件 (仅 media)
         ark_template_id: ARK 模板 ID (仅 ark)
     """
-    if not _bot_manager:
+    if not _shared._bot_manager:
         return web.json_response({'success': False, 'message': '机器人管理器未初始化'}, status=500)
 
     try:
@@ -290,7 +291,7 @@ async def handle_recall_message(request: web.Request):
 
     参数: chat_type, chat_id, appid, message_id
     """
-    if not _bot_manager:
+    if not _shared._bot_manager:
         return web.json_response({'success': False, 'message': '机器人管理器未初始化'}, status=500)
     try:
         body = await request.json()

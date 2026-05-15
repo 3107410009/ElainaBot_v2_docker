@@ -2,7 +2,8 @@
 
 from datetime import timedelta, date as _date
 
-from web.tools._message.shared import _bot_manager, _iter_bots, _batch_get_nicknames
+import web.tools._message.shared as _shared
+from web.tools._message.shared import _iter_bots, _batch_get_nicknames
 
 
 def _recent_dates(days=1):
@@ -13,7 +14,7 @@ def _recent_dates(days=1):
 
 def _query_chat_messages_sync(chat_type, chat_id, appid_filter, days=3, limit=300):
     """查某个聊天会话的最近消息 — SQL WHERE 下推, 走索引, 避免全表扶描+Python过滤"""
-    if not _bot_manager:
+    if not _shared._bot_manager:
         return []
     dates = _recent_dates(days)
     results = []
@@ -45,7 +46,7 @@ def _query_chat_messages_sync(chat_type, chat_id, appid_filter, days=3, limit=30
 
 def _query_older_messages_sync(chat_type, chat_id, appid_filter, before_date_str, limit=300, max_days=14):
     """从 before_date 前一天开始往前搜索, 找到第一个有消息的日期即返回"""
-    if not _bot_manager:
+    if not _shared._bot_manager:
         return [], '', False
     from datetime import datetime
     try:
@@ -85,7 +86,7 @@ def _query_older_messages_sync(chat_type, chat_id, appid_filter, before_date_str
 
 def _aggregate_chats_sync(chat_type, appid_filter, days=3):
     """SQL 聚合聊天列表 — 避免下载几千条诡代反检柒"""
-    if not _bot_manager:
+    if not _shared._bot_manager:
         return []
     dates = _recent_dates(days)
     if chat_type == 'group':
@@ -139,7 +140,7 @@ def _aggregate_chats_sync(chat_type, appid_filter, days=3):
             by_path.setdefault((appid, item['last_date']), []).append(item['last_id'])
     id_to_content = {}  # (appid, id) -> content
     for (appid, d), ids in by_path.items():
-        inst = _bot_manager._bots.get(appid)
+        inst = _shared._bot_manager._bots.get(appid)
         if not inst or not ids:
             continue
         for chunk_start in range(0, len(ids), 500):
