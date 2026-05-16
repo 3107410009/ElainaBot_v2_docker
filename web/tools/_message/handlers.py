@@ -9,7 +9,7 @@ from aiohttp import web
 
 import web.tools._message.shared as _shared
 from web.tools._message.shared import (
-    _get_nickname, _batch_get_nicknames, _get_bot,
+    _get_nickname, _batch_get_nicknames, _get_bot, _get_full_access_group_ids,
 )
 from web.tools._message.query import (
     _query_chat_messages_sync, _query_older_messages_sync, _aggregate_chats_sync,
@@ -69,7 +69,8 @@ async def handle_get_chats(request: web.Request):
                 chats = cached[1]
             else:
                 loop = asyncio.get_event_loop()
-                chats = await loop.run_in_executor(None, _aggregate_chats_sync, chat_type, appid_filter, 1)
+                query_type = 'group' if chat_type == 'full_access' else chat_type
+                chats = await loop.run_in_executor(None, _aggregate_chats_sync, query_type, appid_filter, 1)
                 if chat_type == 'user':
                     ids = [c['chat_id'] for c in chats]
                     nicks = await loop.run_in_executor(None, _batch_get_nicknames, ids)
@@ -77,9 +78,13 @@ async def handle_get_chats(request: web.Request):
                         c['nickname'] = nicks.get(c['chat_id'], f"用户{c['chat_id'][-6:]}")
                         c['avatar'] = (c['nickname'] or '?')[0].upper()
                 else:
+                    fa_ids = _get_full_access_group_ids()
                     for c in chats:
                         c['nickname'] = f"群{c['chat_id'][-6:]}"
                         c['avatar'] = c['chat_id'][0].upper() if c['chat_id'] else '?'
+                        c['is_full_access'] = c['chat_id'] in fa_ids
+                    if chat_type == 'full_access':
+                        chats = [c for c in chats if c['is_full_access']]
                 _chat_list_cache[cache_key] = (time.time(), chats)
 
     if search:
@@ -223,6 +228,10 @@ async def handle_send_message(request: web.Request):
         media_file_type = int(fields.get('media_file_type', '1'))
         ark_template_id = int(fields.get('ark_template_id', '23'))
 
+        # 全量群只用主动消息, 不需要被动消息
+        if chat_type == 'group' and chat_id in _get_full_access_group_ids():
+            msg_id = ''
+
         if not chat_type or not chat_id:
             return web.json_response({'success': False, 'message': '缺少 chat_type/chat_id'}, status=400)
         if not content and not image_data and msg_type != 'ark':
@@ -242,42 +251,28 @@ async def handle_send_message(request: web.Request):
         gid = chat_id if is_group else None
         uid = chat_id if not is_group else None
 
+        # 发送 — sender.send_to_* 内部已记录日志, 其余路径需手动记录
+        need_log = True
         if msg_type == 'media' and content:
-            ok, data = await _send_media_url(
-                sender, content, file_type=media_file_type,
-                group_id=gid, user_id=uid, msg_id=msg_id)
-
+            ok, data = await _send_media_url(sender, content, file_type=media_file_type, group_id=gid, user_id=uid, msg_id=msg_id)
         elif msg_type == 'ark' and content:
-            ok, data = await _send_ark(
-                sender, ark_template_id, content,
-                group_id=gid, user_id=uid, msg_id=msg_id)
-
+            ok, data = await _send_ark(sender, ark_template_id, content, group_id=gid, user_id=uid, msg_id=msg_id)
         elif msg_type == 'text' and image_data:
-            ok, data = await _send_text_with_image(
-                sender, content, image_data,
-                group_id=gid, user_id=uid, msg_id=msg_id)
-
+            ok, data = await _send_text_with_image(sender, content, image_data, group_id=gid, user_id=uid, msg_id=msg_id)
         else:
+            need_log = False
             api_msg_type = 2 if msg_type == 'markdown' else 0
-            if chat_type == 'group':
-                ok, data, actual_payload = await sender.send_to_group(
-                    chat_id, content, msg_id=msg_id, msg_type=api_msg_type)
-            else:
-                ok, data, actual_payload = await sender.send_to_user(
-                    chat_id, content, msg_id=msg_id, msg_type=api_msg_type)
+            send_fn = sender.send_to_group if is_group else sender.send_to_user
+            ok, data, _ = await send_fn(chat_id, content, msg_id=msg_id, msg_type=api_msg_type)
 
-        # 保存图片到本地缓存 (data/media/)
-        media_label = sender._save_media(image_data, 1) if image_data else ''
-
-        # 构建显示内容
-        display = _build_display(msg_type, content, image_data, media_file_type, ark_template_id, media_label)
-
-        send_payload = locals().get('actual_payload') or {'msg_type': msg_type, 'content': content}
         if ok:
-            _log_sent_message(bot, chat_type, chat_id, display, bot_appid, bot_name, bot_qq, send_payload)
+            if need_log:
+                media_label = sender._save_media(image_data, 1) if image_data else ''
+                display = _build_display(msg_type, content, image_data, media_file_type, ark_template_id, media_label)
+                _log_sent_message(bot, chat_type, chat_id, display, bot_appid, bot_name, bot_qq)
             return web.json_response({'success': True, 'message': '发送成功'})
         err_msg = data.get('message', '发送失败') if isinstance(data, dict) else str(data)
-        _log_send_error(bot, msg_type, chat_type, chat_id, send_payload, data, bot_appid, msg_id)
+        _log_send_error(bot, msg_type, chat_type, chat_id, {}, data, bot_appid, msg_id)
         return web.json_response({'success': False, 'message': err_msg})
 
     except Exception as e:

@@ -52,6 +52,13 @@ bots:
       group_enabled: false             # 群黑名单开关
       user_list: []                    # 用户黑名单列表 (OpenID)
       group_list: []                   # 群黑名单列表 (群 OpenID)
+
+    # 未@消息 (开启后全量消息匹配正则插件, 不判断是否@机器人)
+    non_at_message:
+      enabled: false                   # 未@消息响应开关
+      group_whitelist: []              # 群白名单 (关闭时仅白名单群触发插件)
+      ignore_at_other_bot: false       # 忽略仅@其他机器人的消息 (未@自己时静默跳过)
+
   # 添加更多机器人只需复制上方配置块:
   # - name: "第二个机器人"
   #   appid: "xxx"

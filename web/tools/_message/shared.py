@@ -90,3 +90,14 @@ def _get_bot(appid=''):
     if appid and appid in _bot_manager._bots:
         return _bot_manager._bots[appid]
     return next(iter(_bot_manager._bots.values()))
+
+
+def _get_full_access_group_ids():
+    """返回所有全量群 group_id 集合"""
+    if not _bot_manager:
+        return set()
+    try:
+        rows = _bot_manager.get_full_access_groups()
+        return {r['group_id'] for r in rows if r.get('group_id')}
+    except Exception:
+        return set()

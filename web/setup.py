@@ -99,6 +99,11 @@ def setup_web(app: web.Application, bot_manager, base_dir: str):
         log.warning(f"Web 面板未找到编译产物 (期望路径: {dist_dir})")
 
 
+_MIME = {'.js': 'application/javascript', '.css': 'text/css',
+         '.html': 'text/html', '.json': 'application/json',
+         '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon'}
+
+
 def _make_spa_handler(dist_dir: str):
     async def handler(request: web.Request):
         path = request.match_info.get('path', '')
@@ -108,11 +113,13 @@ def _make_spa_handler(dist_dir: str):
         file_path = os.path.join(dist_dir, path.replace('/', os.sep))
 
         if os.path.isfile(file_path):
-            return web.FileResponse(file_path)
+            ext = os.path.splitext(file_path)[1].lower()
+            ct = _MIME.get(ext)
+            return web.FileResponse(file_path, headers={'Content-Type': ct} if ct else {})
 
         index = os.path.join(dist_dir, 'index.html')
         if os.path.isfile(index):
-            return web.FileResponse(index)
+            return web.FileResponse(index, headers={'Content-Type': 'text/html'})
 
         return web.Response(text='Not Found', status=404)
 

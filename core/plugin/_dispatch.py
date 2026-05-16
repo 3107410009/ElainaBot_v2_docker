@@ -67,6 +67,12 @@ class _DispatchMixin:
 
         is_non_at = (et == 'GROUP_MESSAGE_CREATE' and not getattr(event, 'is_at_self', False))
 
+        # 过滤仅@其他机器人的全量消息
+        if et == 'GROUP_MESSAGE_CREATE' and getattr(event, 'is_at_other_bot', False) \
+                and not getattr(event, 'is_at_self', False) \
+                and cfg.get_bot_setting(appid, 'non_at_message.ignore_at_other_bot', False):
+            return False
+
         # 黑名单
         if not is_non_at:
             bl = self._check_blacklist(event)

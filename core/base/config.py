@@ -26,6 +26,7 @@ _BOT_DEFAULTS = {
     'message.button_enter_to_send': False,
     'message.send_default_response': False,
     'message.default_response_excluded_regex': [],
+    'non_at_message.ignore_at_other_bot': False,
     'identity.use_union_id_for_group': False,
     'identity.use_union_id_for_channel': False,
     'welcome.group_welcome': False,
