@@ -66,7 +66,6 @@ class RedisPool:
             self._client = Redis(connection_pool=pool)
             await self._client.ping()
             self._available = True
-            self._log.info(f"✅ Redis 连接成功 [{self._cfg['host']}:{self._cfg['port']}/{self._cfg['db']}]")
         except Exception as e:
             self._log.error(f"Redis 初始化失败: {e}")
             self._client = None

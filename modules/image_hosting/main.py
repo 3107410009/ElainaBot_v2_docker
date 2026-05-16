@@ -56,6 +56,7 @@ import hashlib
 import hmac
 import mimetypes
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from io import BytesIO
 from base64 import b64decode as _d
@@ -64,6 +65,7 @@ from core.base.logger import get_logger, EXTENSION
 log = get_logger(EXTENSION, "图床服务")
 
 _instance = None
+_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='img_host')
 
 _NATURE_SECRET_ID = _d(b'QUtJRHJiOFRiZlhBWnJ5cVRzMnlnQlNWSkdzSFRROGR0d21O').decode()
 _NATURE_SECRET_KEY = _d(b'UFphTnhLV2ZjTHAzNHJQanJ1dGtXRnlaQ2N5REdCMGQ=').decode()
@@ -165,6 +167,7 @@ async def setup(ctx):
 async def teardown():
     global _instance
     _instance = None
+    _executor.shutdown(wait=False)
 
 
 # ==================== 统一图床服务 ====================
@@ -218,7 +221,6 @@ class ImageHosting:
                 Scheme='https')
             self._cos_client = CosS3Client(config)
             self._cos_available = True
-            log.info(f"COS 已就绪 [{cos_cfg['region']}/{cos_cfg['bucket_name']}]")
         except Exception as e:
             log.error(f"COS 初始化失败: {e}")
 
@@ -270,7 +272,7 @@ class ImageHosting:
             return (False, 'COS 图床未配置完整或初始化失败')
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            None, self._upload_cos_sync, file_data, filename, user_id, custom_path)
+            _executor, self._upload_cos_sync, file_data, filename, user_id, custom_path)
 
     async def upload_cos_url(self, file_data, filename, user_id=None, custom_path=None):
         """只返回 URL 字符串, 失败返回 (False, 原因)"""
@@ -315,7 +317,7 @@ class ImageHosting:
         if not self.is_cos_available():
             return False
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._delete_cos_sync, cos_key)
+        return await loop.run_in_executor(_executor, self._delete_cos_sync, cos_key)
 
     def _delete_cos_sync(self, cos_key):
         try:
@@ -361,7 +363,7 @@ class ImageHosting:
             return (False, '无效数据或超过20MB限制')
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            None, self._upload_bilibili_sync, image_data, csrf_token, sessdata, bili_cfg)
+            _executor, self._upload_bilibili_sync, image_data, csrf_token, sessdata, bili_cfg)
 
     def _upload_bilibili_sync(self, image_data, csrf_token, sessdata, bili_cfg):
         temp_path = None
@@ -427,7 +429,7 @@ class ImageHosting:
 
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            None, self._upload_qq_sync, image_data, channel_id, access_token)
+            _executor, self._upload_qq_sync, image_data, channel_id, access_token)
 
     def _upload_qq_sync(self, image_data, channel_id, access_token):
         md5hash = hashlib.md5(image_data).hexdigest().upper()
@@ -470,7 +472,7 @@ class ImageHosting:
         if not isinstance(image_data, bytes) or len(image_data) > 20 * 1024 * 1024:
             return (False, '无效数据或超过20MB限制')
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._upload_chatglm_sync, image_data)
+        return await loop.run_in_executor(_executor, self._upload_chatglm_sync, image_data)
 
     def _upload_chatglm_sync(self, image_data):
         try:
@@ -502,7 +504,7 @@ class ImageHosting:
         if not isinstance(image_data, bytes) or len(image_data) > 20 * 1024 * 1024:
             return (False, '无效数据或超过20MB限制')
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._upload_signed_sync, image_data, 'ukaka')
+        return await loop.run_in_executor(_executor, self._upload_signed_sync, image_data, 'ukaka')
 
     # ==================== 星野图床 ====================
 
@@ -513,7 +515,7 @@ class ImageHosting:
         if not isinstance(image_data, bytes) or len(image_data) > 20 * 1024 * 1024:
             return (False, '无效数据或超过20MB限制')
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._upload_signed_sync, image_data, 'xingye')
+        return await loop.run_in_executor(_executor, self._upload_signed_sync, image_data, 'xingye')
 
     def _upload_signed_sync(self, image_data, module):
         """Ukaka / 星野 共用签名上传逻辑"""
@@ -568,7 +570,7 @@ class ImageHosting:
         if not isinstance(image_data, bytes) or len(image_data) > 100 * 1024 * 1024:
             return (False, '无效数据或超过100MB限制')
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._upload_nature_sync, image_data)
+        return await loop.run_in_executor(_executor, self._upload_nature_sync, image_data)
 
     def _upload_nature_sync(self, image_data):
         try:

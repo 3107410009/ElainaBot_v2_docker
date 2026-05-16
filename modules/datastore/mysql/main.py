@@ -67,7 +67,6 @@ class MySQLPool:
                 autocommit=bool(self._cfg.get('autocommit', True)),
             )
             self._available = True
-            self._log.info(f"✅ MySQL 连接池就绪 [{self._cfg['host']}:{self._cfg['port']}/{self._cfg['database']}]")
         except Exception as e:
             self._log.error(f"MySQL 初始化失败: {e}")
             self._available = False

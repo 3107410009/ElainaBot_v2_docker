@@ -51,6 +51,7 @@ _DEFAULTS = {
     'image_format': 'jpeg',
     'image_quality': 90,
     'browser_type': 'chromium',
+    'close_after_use': False,
     'launch_args': [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -72,6 +73,7 @@ _COMMENTS = {
     'image_format': '截图格式: jpeg / png',
     'image_quality': '截图质量 (仅 jpeg, 1-100)',
     'browser_type': '浏览器类型: chromium / firefox / webkit',
+    'close_after_use': '用完即关: 每次调用结束后完全关闭浏览器进程, 不保留常驻进程 (适合低内存环境)',
     'launch_args': '浏览器启动参数',
 }
 
@@ -140,6 +142,16 @@ class PlaywrightRenderer:
                 pass
             self._browser = None
 
+    async def _shutdown_all(self):
+        """关闭浏览器 + Playwright 进程 (用完即关模式)"""
+        await self._close_browser()
+        if self._pw:
+            try:
+                await self._pw.stop()
+            except Exception:
+                pass
+            self._pw = None
+
     async def _ensure_browser(self):
         """按需启动浏览器, 崩溃时自动重启"""
         if self._browser and self._browser.is_connected():
@@ -159,8 +171,9 @@ class PlaywrightRenderer:
                     args=self._cfg.get('launch_args', []),
                 )
                 log.info("✅ 浏览器已启动" if not restarting else "✅ 浏览器已重启")
-                if not self._cleanup_task or self._cleanup_task.done():
-                    self._cleanup_task = asyncio.create_task(self._idle_cleanup_loop())
+                if not self._cfg.get('close_after_use', False):
+                    if not self._cleanup_task or self._cleanup_task.done():
+                        self._cleanup_task = asyncio.create_task(self._idle_cleanup_loop())
                 return True
             except Exception as e:
                 self._last_error = str(e)
@@ -237,7 +250,9 @@ class PlaywrightRenderer:
                 if self._active_pages <= 0:
                     self._active_pages = 0
                     self._last_release = time.monotonic()
-                    if self._cfg.get('idle_timeout', 300) == 0:
+                    if self._cfg.get('close_after_use', False):
+                        await self._shutdown_all()
+                    elif self._cfg.get('idle_timeout', 300) == 0:
                         await self._close_browser()
 
     async def screenshot_url(self, url, *,

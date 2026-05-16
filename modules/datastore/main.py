@@ -74,20 +74,20 @@ async def setup(ctx):
 
     parts = []
     if mysql_inst and mysql_inst.is_available():
-        parts.append("MySQL ✅")
+        parts.append(f"MySQL ✅ [{mysql_cfg['host']}:{mysql_cfg['port']}/{mysql_cfg['database']}]")
     elif cfg.get('mysql_enabled'):
         parts.append("MySQL ❌")
     else:
         parts.append("MySQL 关闭")
 
     if redis_inst and redis_inst.is_available():
-        parts.append("Redis ✅")
+        parts.append(f"Redis ✅ [{redis_cfg['host']}:{redis_cfg['port']}/{redis_cfg['db']}]")
     elif cfg.get('redis_enabled'):
         parts.append("Redis ❌")
     else:
         parts.append("Redis 关闭")
 
-    log.info(f"数据存储引擎: {' | '.join(parts)}")
+    log.info(f"{' | '.join(parts)}")
     return _instance
 
 

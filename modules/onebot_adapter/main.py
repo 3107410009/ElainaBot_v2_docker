@@ -13,7 +13,7 @@
 __module_meta__ = {
     'name': 'OneBot 适配器',
     'description': 'OneBot 11 协议适配器, 将消息/事件推送到外部机器人框架',
-    'version': '1.0.0',
+    'version': '1.1.0',
     'author': 'Elaina',
 }
 
@@ -21,6 +21,7 @@ import json
 import base64
 import random
 import asyncio
+from collections import OrderedDict
 from modules.onebot_adapter.lib.id_mapper import IDMapper
 from modules.onebot_adapter.lib.ws_server import OneBotWSServer
 from modules.onebot_adapter.lib.event_converter import convert_message_event, convert_lifecycle_event
@@ -60,7 +61,7 @@ class OneBotAdapter:
         self.ws_server = None
         self._senders = {}           # {appid: sender}
         self._log_services = {}      # {appid: LogService}
-        self._msg_id_cache = {}      # {(appid, chat_id): msg_id}  缓存最近 msg_id
+        self._msg_id_cache = OrderedDict()  # LRU {(appid, chat_id): msg_id}
         self._qq_map = {}            # {appid_str: robot_qq_int}
         self._default_qq = 0
         self._current_appid = ''     # action 处理时的上下文 appid
@@ -248,7 +249,11 @@ class OneBotAdapter:
         if event.message_id:
             chat_id = event.group_id or event.user_id or ''
             if chat_id:
-                self._msg_id_cache[(appid, chat_id)] = event.message_id
+                key = (appid, chat_id)
+                self._msg_id_cache[key] = event.message_id
+                self._msg_id_cache.move_to_end(key)
+                if len(self._msg_id_cache) > 500:
+                    self._msg_id_cache.popitem(last=False)
 
         # 转换事件
         ob_event = None
