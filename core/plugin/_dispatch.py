@@ -113,8 +113,9 @@ class _DispatchMixin:
                 return True
 
         # 无匹配 → 默认回复
-        if et in ('GROUP_AT_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE') \
-                and cfg.get_bot_setting(appid, 'message.send_default_response', True):
+        should_default = (et in ('GROUP_AT_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE')
+                          or (et == 'GROUP_MESSAGE_CREATE' and getattr(event, 'is_at_self', False)))
+        if should_default and cfg.get_bot_setting(appid, 'message.send_default_response', True):
             excluded = cfg.get_bot_setting(appid, 'message.default_response_excluded_regex', []) or []
             if not any(re.search(p, content) for p in excluded if p):
                 asyncio.create_task(event.reply(
