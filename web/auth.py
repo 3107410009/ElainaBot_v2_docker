@@ -45,7 +45,6 @@ def init(base_dir: str):
     _COOKIE_SECRET = _load_or_create_secret()
     _load_ip_data()
     _load_session_data()
-    _migrate_password()
 
 
 def _load_or_create_secret() -> str:
@@ -96,64 +95,6 @@ def verify_password(plain: str, stored: str) -> bool:
 
 def is_hashed(stored: str) -> bool:
     return stored.startswith(_PWD_HASH_PREFIX)
-
-
-def _migrate_password():
-    """启动时将明文密码自动迁移为 hash"""
-    try:
-        from core.base.config import cfg
-        pwd = cfg.get('settings', 'web.admin_password', '')
-        if pwd and not is_hashed(pwd):
-            cfg.set_value('settings', 'web.admin_password', hash_password(pwd))
-    except Exception:
-        pass
-
-
-def get_password_hash() -> str:
-    """获取存储的密码 hash 中的 salt:hex 部分 (用于 challenge-response)"""
-    try:
-        from core.base.config import cfg
-        stored = cfg.get('settings', 'web.admin_password', '')
-        if not stored:
-            return ''
-        if stored.startswith(_PWD_HASH_PREFIX):
-            return stored[len(_PWD_HASH_PREFIX):]
-        # 明文未迁移, 即时迁移
-        hashed = hash_password(stored)
-        cfg.set_value('settings', 'web.admin_password', hashed)
-        return hashed[len(_PWD_HASH_PREFIX):]
-    except Exception:
-        pass
-    return ''
-
-
-# ==================== Nonce ====================
-
-_NONCE_EXPIRY = 30  # 秒
-_nonces: dict = {}  # nonce -> expire_time
-
-
-def create_nonce() -> str:
-    """生成一次性 nonce"""
-    _cleanup_nonces()
-    nonce = base64.urlsafe_b64encode(os.urandom(24)).decode().rstrip('=')
-    _nonces[nonce] = time.time() + _NONCE_EXPIRY
-    return nonce
-
-
-def consume_nonce(nonce: str) -> bool:
-    """消费 nonce, 成功返回 True (一次性)"""
-    exp = _nonces.pop(nonce, None)
-    if exp is None:
-        return False
-    return time.time() < exp
-
-
-def _cleanup_nonces():
-    now = time.time()
-    expired = [k for k, v in _nonces.items() if now >= v]
-    for k in expired:
-        del _nonces[k]
 
 
 # ==================== JSON IO ====================

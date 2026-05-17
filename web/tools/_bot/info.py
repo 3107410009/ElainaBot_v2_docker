@@ -35,14 +35,24 @@ async def handle_get_robot_info(request: web.Request):
     robot_qq = getattr(bot, 'robot_qq', '') if bot else ''
     share_url = _SHARE_URL.format(robot_qq)
 
+    is_webhook = bool(bot and not bot.ws_client)
     ws_connected = bool(bot and bot.ws_client and getattr(bot.ws_client, '_connected', False))
-    conn_type = 'WebSocket'
-    conn_status = '已连接' if ws_connected else ('等待接收中' if conn_type == 'Webhook' else '未连接')
+    conn_type = 'Webhook' if is_webhook else 'WebSocket'
+    conn_status = '已连接' if ws_connected else ('等待接收中' if is_webhook else '未连接')
     channel_url = _CHANNEL_URL.format(appid)
     _qr = lambda u: '/api/robot/qrcode?url=' + urllib.parse.quote(u, safe='')
+    webhook_url = ''
+    if is_webhook:
+        from core.base.config import cfg
+        host = cfg.get('settings', 'server.host', '0.0.0.0')
+        port = cfg.get('settings', 'server.port', 5200)
+        display_host = request.host.split(':')[0] if request.host else host
+        webhook_url = f'http://{display_host}:{port}/?appid={appid}'
     base = {
         'appid': appid, 'qq': robot_qq, 'link': share_url,
         'connection_type': conn_type, 'connection_status': conn_status,
+        'webhook_url': webhook_url,
+        'webhook_port': port if is_webhook else '',
         'qr_code_api': _qr(share_url),
         'channel_link': channel_url, 'channel_qr_code_api': _qr(channel_url),
     }
