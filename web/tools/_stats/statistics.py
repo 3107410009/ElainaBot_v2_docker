@@ -119,17 +119,28 @@ def _aggregate_hourly(appid_filter, date):
         if not need_query_hours:
             continue
 
-        # 实时查询 message.db
+        # 实时查询 message.db — 尽量缩小扫描范围
+        queried = {}
         try:
-            rows = inst.log_service.query(
-                'message',
-                "SELECT substr(timestamp, 12, 2) AS hr, COUNT(*) AS c FROM log GROUP BY hr",
-                date=date)
-            queried = {}
-            for r in rows:
-                h_str = r.get('hr', '')
-                if h_str and h_str.isdigit():
-                    queried[int(h_str)] = r.get('c', 0)
+            if need_query_hours == {current_hour}:
+                # 只需当前小时: 用 WHERE 过滤, 避免全表扫描
+                prefix = f'{current_hour:02d}'
+                rows = inst.log_service.query(
+                    'message',
+                    "SELECT COUNT(*) AS c FROM log WHERE substr(timestamp, 12, 2) = ?",
+                    (prefix,), date=date)
+                if rows:
+                    queried[current_hour] = rows[0].get('c', 0)
+            else:
+                # 需要多个小时: 全表 GROUP BY (仅首次缓存时触发)
+                rows = inst.log_service.query(
+                    'message',
+                    "SELECT substr(timestamp, 12, 2) AS hr, COUNT(*) AS c FROM log GROUP BY hr",
+                    date=date)
+                for r in rows:
+                    h_str = r.get('hr', '')
+                    if h_str and h_str.isdigit():
+                        queried[int(h_str)] = r.get('c', 0)
         except Exception:
             continue
 

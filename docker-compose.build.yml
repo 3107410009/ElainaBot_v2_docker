@@ -11,7 +11,7 @@ services:
       - ./config:/app/config
       - ./plugins:/app/plugins
       - ./modules:/app/modules
-      - ./log:/app/log
+      - ./data:/app/data
     environment:
       - TZ=Asia/Shanghai
     tty: true

@@ -246,12 +246,11 @@ class EventHandlerMixin:
         if extra:
             entry.update(extra)
         if raw_event:
-            raw_json = json.dumps(raw_event, ensure_ascii=False)
-            entry['extra'] = raw_json
+            entry['extra'] = raw_event  # dict, 由 _extract_row 统一序列化
         asyncio.create_task(bot.log_service.add('lifecycle', entry))
         web_entry = {'appid': bot.appid, 'bot_name': bot.name, **entry}
         if raw_event:
-            web_entry['raw_message'] = entry['extra']
+            web_entry['raw_message'] = json.dumps(raw_event, ensure_ascii=False)
         self._push_web_log('lifecycle', web_entry)
 
     async def _handle_group_add(self, bot, event):
