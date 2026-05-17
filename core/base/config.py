@@ -128,17 +128,32 @@ class ConfigManager:
     # ------ 热加载 ------
 
     def _resolve_path(self, name):
-        """解析配置文件名 -> 绝对路径 (带缓存)"""
+        """解析配置文件名 -> 绝对路径 (带缓存)
+
+        查找顺序: name.yaml > name.yml > name.example.yaml(自动复制) > name.yaml(占位)
+        当实际配置文件不存在时, 自动从 .example.yaml 复制生成, 避免示例文件被本地修改污染版本控制.
+        """
         cached = self._path_cache.get(name)
         if cached:
             return cached
         base = os.path.join(self._config_dir, name)
+        # 1) 优先查找实际配置文件 (.yaml / .yml / 无扩展名)
         for ext in ('.yaml', '.yml', ''):
             p = base + ext
             if os.path.isfile(p):
-                break
-        else:
-            p = base + '.yaml'
+                self._path_cache[name] = p
+                return p
+        # 2) 尝试从 .example.yaml 自动复制
+        example_p = base + '.example.yaml'
+        if os.path.isfile(example_p):
+            import shutil
+            target = base + '.yaml'
+            shutil.copy2(example_p, target)
+            logger.info(f"从示例文件创建配置: {os.path.basename(base)}.yaml <- {os.path.basename(example_p)}")
+            self._path_cache[name] = target
+            return target
+        # 3) 都不存在, 返回默认路径 (后续写入时创建)
+        p = base + '.yaml'
         self._path_cache[name] = p
         return p
 

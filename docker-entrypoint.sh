@@ -1,12 +1,11 @@
 #!/bin/bash
 set -e
 
-# 如果挂载的 config 目录为空，复制默认配置
-if [ ! -f /app/config/settings.yaml ]; then
-    echo ">>> 首次启动，复制默认配置..."
+# 如果挂载的 config 目录为空，复制示例配置 (Python ConfigManager 会在首次加载时自动从 .example.yaml 生成 .yaml)
+if [ ! -f /app/config/settings.yaml ] && [ ! -f /app/config/settings.example.yaml ]; then
+    echo ">>> 首次启动，复制示例配置..."
     mkdir -p /app/config
-    cp /app/config.defaults/settings.yaml /app/config/settings.yaml
-    cp /app/config.defaults/bot.yaml /app/config/bot.yaml 2>/dev/null || true
+    cp /app/config.defaults/*.example.yaml /app/config/ 2>/dev/null || true
 fi
 
 # 如果挂载的 plugins 目录为空，复制系统插件
