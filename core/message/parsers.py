@@ -94,6 +94,8 @@ def parse_group_message(event, d):
                 event.is_at_self = True
             if mention.get('bot') is True and not is_you:
                 event.is_at_other_bot = True
+            if not mention.get('bot') and not is_you and mention.get('scope') != 'all':
+                event.is_at_other_user = True
             if mention.get('scope') == 'all':
                 event.is_at_all = True
 
