@@ -119,6 +119,6 @@ def clear_mirror_cache():
 
 
 # 默认跳过的路径
-DEFAULT_SKIP = ['config/', 'data/', 'plugins/', 'modules/', '.git/', '__pycache__/']
+DEFAULT_SKIP = ['config/', 'data/', 'plugins/', 'modules/', '.git/', '__pycache__/', 'tests/', '.github/', '.gitignore', 'pyproject.toml', 'README.md']
 # 白名单: 即使父目录在 skip 列表, 这些路径仍然正常更新
 DEFAULT_WHITELIST = ['plugins/system/']

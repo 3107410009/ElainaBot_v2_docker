@@ -15,5 +15,10 @@
   "web/tools/statistics_handler.py",
   "web/tools/system_info.py",
   "web/tools/update_handler.py",
-  "web/tools/updater.py"
+  "web/tools/updater.py",
+  "tests/",
+  ".github/",
+  ".gitignore",
+  "pyproject.toml",
+  "LICENSE"
 ]
