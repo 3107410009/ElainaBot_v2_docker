@@ -13,7 +13,9 @@ class OneBotConfig:
     """
 
     ws_path: str = '/onebot'
-    reverse_ws_urls: list[dict] = field(default_factory=lambda: [{'url': '', 'appid': ''}])
+    reverse_ws_urls: list[dict] = field(
+        default_factory=lambda: [{'url': '', 'appid': ''}]
+    )
     reconnect_interval: int = 5
     access_token: str = ''
     heartbeat_interval: int = 30
@@ -44,7 +46,7 @@ class OneBotConfig:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> 'OneBotConfig':
+    def from_dict(cls, d: dict) -> OneBotConfig:
         """从配置字典构造, 缺失字段使用默认值"""
         return cls(
             ws_path=d.get('ws_path', '/onebot'),

@@ -18,7 +18,7 @@ class SegmentParser:
     """
 
     @staticmethod
-    def parse(message: str | list[dict] | Any) -> tuple[str, bytes | None]:
+    def parse(message: str | list[dict[str, Any]] | Any) -> tuple[str, bytes | None]:
         """解析 OneBot message 字段, 提取文本和图片"""
         if isinstance(message, str):
             return message, None

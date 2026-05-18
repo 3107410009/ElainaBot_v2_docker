@@ -7,6 +7,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from core.bot.manager import BotManager
+
 
 class HookAdapter:
     """框架 Hook 适配器 (Adapter 模式)
@@ -16,12 +22,16 @@ class HookAdapter:
       - teardown 时安全还原原始方法
     """
 
-    def __init__(self, log):
+    _log: Any
+    _bm: BotManager | None
+    _original_on_event: Callable[..., Coroutine[Any, Any, None]] | None
+
+    def __init__(self, log: Any) -> None:
         self._log = log
         self._bm = None  # BotManager
         self._original_on_event = None
 
-    def install(self, bm) -> None:
+    def install(self, bm: BotManager) -> None:
         """安装 on_raw_event hook 触发点
 
         通过运行时 patch BotManager._on_event, 在原始事件分派前

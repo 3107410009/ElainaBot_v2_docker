@@ -21,7 +21,7 @@ class PayloadConverter:
     """
 
     @staticmethod
-    def convert(payload: str | dict) -> dict[str, Any]:
+    def convert(payload: str | dict[str, Any]) -> dict[str, Any]:
         """转换载荷为 kwargs dict"""
         if isinstance(payload, str):
             return {'content': payload}
@@ -36,7 +36,7 @@ class PayloadConverter:
         return {'content': str(payload)}
 
     @staticmethod
-    def _convert_markdown(payload: dict) -> dict[str, Any]:
+    def _convert_markdown(payload: dict[str, Any]) -> dict[str, Any]:
         data = dict(payload.get('data', {}).get('data', {}))
         # keyboard 结构扁平化
         if 'keyboard' in data:

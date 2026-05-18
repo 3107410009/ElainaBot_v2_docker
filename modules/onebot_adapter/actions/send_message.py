@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from modules.onebot_adapter.action_context import ActionContext
 from modules.onebot_adapter.base_action import BaseAction
 from modules.onebot_adapter.payload import MessageSenderService, SegmentParser
 
@@ -23,11 +26,13 @@ class SendMessageAction(BaseAction):
 
     _force_type: str = ''
 
-    def __init__(self, ctx, force_type: str = ''):
+    def __init__(self, ctx: ActionContext, force_type: str = '') -> None:
         super().__init__(ctx)
         self._force_type = force_type
 
-    async def execute(self, params: dict, echo=None) -> dict:
+    async def execute(
+        self, params: dict[str, Any], echo: str | None = None
+    ) -> dict[str, Any]:
         msg_type = self._force_type or params.get('message_type', '')
         group_id = params.get('group_id')
         user_id = params.get('user_id')
@@ -50,9 +55,7 @@ class SendMessageAction(BaseAction):
 
         id_type = 'group' if is_group else 'user'
         if isinstance(raw_id, int):
-            real_id = await self._ctx.id_mapper.to_openid_by_type(
-                int(raw_id), id_type
-            )
+            real_id = await self._ctx.id_mapper.to_openid_by_type(int(raw_id), id_type)
         else:
             real_id = raw_id
         if not real_id:
@@ -61,9 +64,7 @@ class SendMessageAction(BaseAction):
             )
 
         label = str(payload)[:200] if payload else '[image]'
-        self._ctx.log.info(
-            f'{"群" if is_group else "私聊"} {raw_id}: {label}'
-        )
+        self._ctx.log.info(f'{"群" if is_group else "私聊"} {raw_id}: {label}')
 
         gid = real_id if is_group else None
         uid = None if is_group else real_id
@@ -78,9 +79,7 @@ class SendMessageAction(BaseAction):
         )
 
         if ok:
-            return self._ok(
-                {'message_id': hash(str(data)) & 0x7FFFFFFF}, echo=echo
-            )
+            return self._ok({'message_id': hash(str(data)) & 0x7FFFFFFF}, echo=echo)
 
         self._ctx.log.warning(
             f'{"群" if is_group else "私聊"} {raw_id} 发送失败: {data}'

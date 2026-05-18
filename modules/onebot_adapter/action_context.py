@@ -9,25 +9,34 @@ from __future__ import annotations
 import json
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from core.message.sender import MessageSender
 from modules.onebot_adapter.lib.id_mapper import IDMapper
+
+if TYPE_CHECKING:
+    from core.bot.manager import BotManager
+    from core.message.event import Event
+    from core.storage.log import LogService
 
 
 @dataclass
 class ActionContext:
     """Action 执行上下文 — 封装所有 Action 可能需要的服务依赖"""
 
-    log: Any  # 日志器
-    senders: dict[str, MessageSender] = field(default_factory=dict)  # {appid: sender}
-    log_services: dict[str, Any] = field(default_factory=dict)  # {appid: LogService}
+    log: Any  # 日志器 (来自框架, 接口不透明)
+    senders: dict[int, MessageSender] = field(default_factory=dict)  # {appid: sender}
+    log_services: dict[int, LogService] = field(
+        default_factory=dict
+    )  # {appid: LogService}
     id_mapper: IDMapper | None = None
-    msg_id_cache: OrderedDict = field(default_factory=OrderedDict)  # {(appid, chat_id): msg_id}
+    msg_id_cache: OrderedDict[tuple[int, int | str], int | str] = field(
+        default_factory=OrderedDict
+    )  # {(appid, chat_id): msg_id}
     qq_map: dict[str, int] = field(default_factory=dict)  # {appid_str: robot_qq_int}
     default_qq: int = 0
     current_appid: str = ''  # 当前 action 上下文的 appid
-    bm: Any = None  # BotManager 引用 (用于 push_ws 获取 bot 信息)
+    bm: BotManager | None = None  # BotManager 引用 (用于 push_ws 获取 bot 信息)
 
     # ==================== 服务访问 ====================
 
@@ -36,12 +45,14 @@ class ActionContext:
         target = appid or self.current_appid
         return self.senders.get(target) or next(iter(self.senders.values()), None)
 
-    def get_log_service(self, appid: str = '') -> Any:
+    def get_log_service(self, appid: str = '') -> LogService | None:
         """获取 LogService"""
         aid = appid or self.current_appid
-        return self.log_services.get(aid) or next(iter(self.log_services.values()), None)
+        return self.log_services.get(aid) or next(
+            iter(self.log_services.values()), None
+        )
 
-    def find_msg_id(self, chat_id) -> int | str | None:
+    def find_msg_id(self, chat_id: int | str) -> int | str | None:
         """从缓存查找 msg_id"""
         for appid in self.senders:
             mid = self.msg_id_cache.get((appid, chat_id))
@@ -51,7 +62,16 @@ class ActionContext:
 
     # ==================== 日志推送 ====================
 
-    def push_ws(self, *, user_id='', group_id='', content='', is_bot=False, appid='', direction=''):
+    def push_ws(
+        self,
+        *,
+        user_id: str = '',
+        group_id: str = '',
+        content: str = '',
+        is_bot: bool = False,
+        appid: str = '',
+        direction: str = '',
+    ) -> None:
         """实时推送到 web 面板日志流"""
         try:
             import web.ws as _ws
@@ -75,13 +95,18 @@ class ActionContext:
         except Exception:
             pass
 
-    async def log_send(self, msg_type: str, target_id, content: str, ok: bool, resp_data) -> None:
+    async def log_send(
+        self,
+        msg_type: str,
+        target_id: int | str,
+        content: str,
+        ok: bool,
+        resp_data: Any,
+    ) -> None:
         """记录发送消息到 SQLite + 实时推送"""
         gid = str(target_id) if msg_type == 'group' else ''
         uid = str(target_id) if msg_type == 'private' else ''
-        raw = json.dumps(
-            {'ok': ok, 'resp': str(resp_data)[:500]}, ensure_ascii=False
-        )
+        raw = json.dumps({'ok': ok, 'resp': str(resp_data)[:500]}, ensure_ascii=False)
         ls = self.get_log_service()
         if ls:
             await ls.add(
@@ -104,7 +129,9 @@ class ActionContext:
             direction='send',
         )
 
-    async def log_recv(self, appid: str, event, ob_event: dict) -> None:
+    async def log_recv(
+        self, appid: str, event: Event, ob_event: dict[str, Any]
+    ) -> None:
         """记录接收的 OneBot 事件 JSON 到 SQLite (不推实时日志)"""
         if ob_event.get('post_type') != 'message':
             return

@@ -19,6 +19,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from modules.onebot_adapter.action_context import ActionContext
 from modules.onebot_adapter.action_registry import ActionRegistry
 from modules.onebot_adapter.config import OneBotConfig
@@ -29,6 +31,11 @@ from modules.onebot_adapter.lib.event_converter import (
 )
 from modules.onebot_adapter.lib.id_mapper import IDMapper
 from modules.onebot_adapter.lib.ws_server import OneBotWSServer
+
+if TYPE_CHECKING:
+    from core.bot.manager import BotManager
+    from core.message.event import Event
+    from core.module.manager import ModuleContext
 
 
 class OneBotAdapter:
@@ -49,7 +56,14 @@ class OneBotAdapter:
       - 事件格式转换 → lib/event_converter.py
     """
 
-    def __init__(self, module_ctx):
+    # --- instance variables (declared for type checker) ---
+    _mctx: ModuleContext
+    log: Any
+    cfg: OneBotConfig
+    id_mapper: IDMapper | None
+    ws_server: OneBotWSServer | None
+
+    def __init__(self, module_ctx: ModuleContext) -> None:
         self._mctx = module_ctx  # ModuleContext
         self.log = module_ctx.log
         self.cfg: OneBotConfig = OneBotConfig()
@@ -66,7 +80,7 @@ class OneBotAdapter:
         self._action_registry: ActionRegistry | None = None
 
         # 运行时状态
-        self._bm = None  # BotManager 引用
+        self._bm: BotManager | None = None  # BotManager 引用
 
     # ==================== 生命周期 ====================
 
@@ -136,9 +150,7 @@ class OneBotAdapter:
             pass
         for aid, qq in self._actx.qq_map.items():
             self.log.info(f'QQ 映射: appid={aid} → robot_qq={qq}')
-        self._actx.default_qq = next(
-            iter(self._actx.qq_map.values()), 0
-        )
+        self._actx.default_qq = next(iter(self._actx.qq_map.values()), 0)
 
     # ==================== Hook 安装 ====================
 
@@ -146,14 +158,10 @@ class OneBotAdapter:
         """注册框架 Hook 并安装 monkey-patch 触发点"""
 
         # 注册 on_raw_event 监听器 (事件 → OneBot 推送)
-        self._mctx.register_hook(
-            'on_raw_event', self._on_raw_event, priority=10
-        )
+        self._mctx.register_hook('on_raw_event', self._on_raw_event, priority=10)
 
         # 注册 after_send 监听器 (追踪机器人自身发送, 暂留扩展)
-        self._mctx.register_hook(
-            'after_send', self._on_after_send, priority=100
-        )
+        self._mctx.register_hook('after_send', self._on_after_send, priority=100)
 
         # 通过 HookAdapter 补全 on_raw_event 触发点
         self._bm = self._get_bot_manager()
@@ -164,7 +172,7 @@ class OneBotAdapter:
     # ==================== 框架资源访问 (Facade 内部) ====================
 
     @staticmethod
-    def _get_bot_manager():
+    def _get_bot_manager() -> BotManager | None:
         """获取 BotManager 实例"""
         try:
             from core.application import get_app
@@ -226,27 +234,21 @@ class OneBotAdapter:
         if app:
             self.ws_server.attach(app)
             port = self._get_framework_port()
-            self.log.info(
-                f'正向 WS 已挂载: ws://0.0.0.0:{port}{self.cfg.ws_path}'
-            )
+            self.log.info(f'正向 WS 已挂载: ws://0.0.0.0:{port}{self.cfg.ws_path}')
         else:
-            self.log.warning(
-                '无法获取框架 aiohttp app, 正向 WS 未挂载'
-            )
+            self.log.warning('无法获取框架 aiohttp app, 正向 WS 未挂载')
 
         # 反向 WS: 主动连接外部服务器
         await self.ws_server.start_reverse()
         if reverse_entries:
-            self.log.info(
-                f'反向 WS 已启动: {len(reverse_entries)} 个连接'
-            )
+            self.log.info(f'反向 WS 已启动: {len(reverse_entries)} 个连接')
 
         # 心跳
         self.ws_server.start_heartbeat()
 
     # ==================== 事件处理 (Observer) ====================
 
-    async def _on_raw_event(self, event, bot) -> None:
+    async def _on_raw_event(self, event: Event, bot: Any) -> None:
         """on_raw_event 回调 — 将事件转为 OneBot 格式推送到 WS 客户端
 
         同时动态更新 ActionContext 中的 senders / log_services / qq_map。
@@ -276,8 +278,7 @@ class OneBotAdapter:
                     self.ws_server._default_qq = self._actx.default_qq
 
         self_qq = (
-            self._actx.qq_map.get(aid, self._actx.default_qq)
-            or self._actx.default_qq
+            self._actx.qq_map.get(aid, self._actx.default_qq) or self._actx.default_qq
         )
 
         # 缓存 msg_id (用于后续回复 quote)
@@ -286,19 +287,15 @@ class OneBotAdapter:
         # 事件转换 (Strategy: message / lifecycle)
         ob_event = None
         if event.is_lifecycle:
-            ob_event = await convert_lifecycle_event(
-                event, self.id_mapper, self_qq
-            )
+            ob_event = await convert_lifecycle_event(event, self.id_mapper, self_qq)
         else:
-            ob_event = await convert_message_event(
-                event, self.id_mapper, self_qq
-            )
+            ob_event = await convert_message_event(event, self.id_mapper, self_qq)
 
         if ob_event:
             await self._actx.log_recv(aid, event, ob_event)
             await self.ws_server.broadcast(ob_event, appid=aid)
 
-    def _cache_msg_id(self, event, appid) -> None:
+    def _cache_msg_id(self, event: Event, appid: int) -> None:
         """缓存消息 ID 用于后续回复"""
         if not event.message_id:
             return
@@ -311,16 +308,18 @@ class OneBotAdapter:
         if len(self._actx.msg_id_cache) > 500:
             self._actx.msg_id_cache.popitem(last=False)
 
-    async def _on_after_send(self, data) -> None:
+    async def _on_after_send(self, data: dict[str, Any]) -> None:
         """after_send hook — 追踪机器人自身回复 (暂留扩展)"""
         pass
 
     # ==================== Action 路由 (Command 委托) ====================
 
     async def _handle_action(
-        self, action: str, params: dict, echo=None, appid: str = ''
-    ) -> dict:
+        self,
+        action: str,
+        params: dict[str, Any],
+        echo: str | None = None,
+        appid: str = '',
+    ) -> dict[str, Any]:
         """处理来自外部框架的 OneBot action — 委托给 ActionRegistry"""
-        return await self._action_registry.dispatch(
-            action, params, echo, appid
-        )
+        return await self._action_registry.dispatch(action, params, echo, appid)

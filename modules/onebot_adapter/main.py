@@ -23,7 +23,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from modules.onebot_adapter.adapter import OneBotAdapter
+
+if TYPE_CHECKING:
+    from core.module.manager import ModuleContext
 
 __module_meta__ = {
     'name': 'OneBot 适配器',
@@ -35,7 +40,7 @@ __module_meta__ = {
 _adapter: OneBotAdapter | None = None  # 全局引用, 用于 teardown
 
 
-async def setup(ctx) -> None:
+async def setup(ctx: ModuleContext) -> None:
     """模块启用入口"""
     global _adapter
     _adapter = OneBotAdapter(ctx)

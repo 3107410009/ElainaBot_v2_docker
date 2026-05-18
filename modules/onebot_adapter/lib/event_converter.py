@@ -45,7 +45,13 @@ def _build_segments(event) -> list[dict]:
     # 3. 兜底: 完全无内容时补空文本
     if not segments:
         segments.append({'type': 'text', 'data': {'text': ''}})
-
+    if mentions := getattr(event, 'mentions', None):
+        for user in mentions:
+            scope = user.get('scope') or 'single'
+            uid = 0 if scope == 'all' else user.get('id') or user.get('member_openid')
+            data = {'qq': uid} | user
+            at_seg = {'type': 'at', 'data': data}
+            segments.append(at_seg)
     return segments
 
 
@@ -90,7 +96,9 @@ async def convert_message_event(event, id_mapper, self_qq: int) -> dict | None:
 
     qq_user = await id_mapper.to_qq(user_id, 'user')
     is_group = event.is_group or bool(group_id and et != 'C2C_MESSAGE_CREATE')
-    qq_group = await id_mapper.to_qq(group_id, 'group') if (is_group and group_id) else 0
+    qq_group = (
+        await id_mapper.to_qq(group_id, 'group') if (is_group and group_id) else 0
+    )
 
     segments = _build_segments(event)
 
@@ -173,6 +181,9 @@ async def convert_lifecycle_event(event, id_mapper, self_qq: int) -> dict | None
     if sub_type:
         result['sub_type'] = sub_type
     if need_group:
-        result['group_id'] = await id_mapper.to_qq(event.group_id, 'group') if event.group_id else 0
+        group_id = 0
+        if event.group_id:
+            group_id = await id_mapper.to_qq(event.group_id, 'group')
+        result['group_id'] = group_id
         result['operator_id'] = qq_user
     return result

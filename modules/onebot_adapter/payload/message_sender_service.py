@@ -24,7 +24,7 @@ class MessageSenderService:
         sender: MessageSender,
         group_id: int | str | None,
         user_id: int | str | None,
-        payload: str | dict,
+        payload: str | dict[str, Any],
         image_bytes: bytes | None,
         msg_id: int | str | None,
     ) -> tuple[bool, Any]:
@@ -50,7 +50,7 @@ class MessageSenderService:
         sender: MessageSender,
         target: int | str,
         prefix: str,
-        payload: str | dict,
+        payload: str | dict[str, Any],
         image_bytes: bytes,
         msg_id: int | str | None,
     ) -> tuple[bool, Any]:
@@ -67,9 +67,7 @@ class MessageSenderService:
         }
         if msg_id:
             media_payload['msg_id'] = msg_id
-        return await sender.post_json(
-            f'/v2/{prefix}/{target}/messages', media_payload
-        )
+        return await sender.post_json(f'/v2/{prefix}/{target}/messages', media_payload)
 
     @staticmethod
     async def _send_text(
@@ -77,16 +75,12 @@ class MessageSenderService:
         group_id: int | str | None,
         user_id: int | str | None,
         target: int | str,
-        payload: str | dict,
+        payload: str | dict[str, Any],
         msg_id: int | str | None,
     ) -> tuple[bool, Any]:
         kwargs = PayloadConverter.convert(payload)
         if group_id:
-            ok, data, _ = await sender.send_to_group(
-                target, msg_id=msg_id, **kwargs
-            )
+            ok, data, _ = await sender.send_to_group(target, msg_id=msg_id, **kwargs)
         else:
-            ok, data, _ = await sender.send_to_user(
-                target, msg_id=msg_id, **kwargs
-            )
+            ok, data, _ = await sender.send_to_user(target, msg_id=msg_id, **kwargs)
         return ok, data

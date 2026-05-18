@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from modules.onebot_adapter.action_context import ActionContext
 from modules.onebot_adapter.actions import (
     CanSendImageAction,
@@ -42,28 +44,28 @@ class ActionRegistry:
         self._actions.update(mapping)
 
     async def dispatch(
-        self, action: str, params: dict, echo=None, appid: str = ''
-    ) -> dict:
+        self,
+        action: str,
+        params: dict[str, Any],
+        echo: str | None = None,
+        appid: str = '',
+    ) -> dict[str, Any]:
         """路由 action 到对应处理器并执行"""
         self._ctx.current_appid = appid
         handler = self._actions.get(action)
         if handler is None:
-            return ResponseBuilder.fail(
-                f'不支持的 action: {action}', echo=echo
-            )
+            return ResponseBuilder.fail(f'不支持的 action: {action}', echo=echo)
         return await handler.execute(params, echo)
 
     @classmethod
-    def create_default(cls, ctx: ActionContext) -> 'ActionRegistry':
+    def create_default(cls, ctx: ActionContext) -> ActionRegistry:
         """工厂方法: 创建预配置的 Registry (注册所有标准 action)"""
         registry = cls(ctx)
         registry.register_all(
             {
                 'send_msg': SendMessageAction(ctx),
                 'send_group_msg': SendMessageAction(ctx, force_type='group'),
-                'send_private_msg': SendMessageAction(
-                    ctx, force_type='private'
-                ),
+                'send_private_msg': SendMessageAction(ctx, force_type='private'),
                 'get_login_info': GetLoginInfoAction(ctx),
                 'get_group_list': GetGroupListAction(ctx),
                 'get_friend_list': GetFriendListAction(ctx),
