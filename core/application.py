@@ -79,6 +79,11 @@ class Application(EventHandlerMixin):
         return self._http_server.app if self._http_server else None
 
     @property
+    def _app(self):
+        """向后兼容: 老插件用 _bot_manager_ref._app 访问 aiohttp web.Application"""
+        return self.web_app
+
+    @property
     def router(self):
         """向后兼容: _bot_manager_ref._app.router"""
         app = self.web_app
