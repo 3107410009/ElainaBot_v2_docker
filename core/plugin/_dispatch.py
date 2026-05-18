@@ -157,9 +157,8 @@ class _DispatchMixin:
                 return True
 
         # 无匹配 → 默认回复
-        if not suppress_reply and (et in ('GROUP_AT_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE') or (is_group_msg and is_at_self)):
-            if not _get(appid, 'message.send_default_response', True):
-                return False
+        should_default = not suppress_reply and (et in ('GROUP_AT_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE') or (is_group_msg and is_at_self))
+        if should_default and _get(appid, 'message.send_default_response', True):
             excluded = _get(appid, 'message.default_response_excluded_regex', []) or []
             if not any(re.search(p, content) for p in excluded if p):
                 asyncio.create_task(event.reply(template_name='default', template_vars={'user_id': user_id}))
