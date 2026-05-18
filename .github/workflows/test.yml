@@ -53,7 +53,7 @@ jobs:
         run: ruff check .
 
       - name: Type check (mypy)
-        run: mypy core/ web/
+        run: mypy --explicit-package-bases core/ web/
 
   # ============================================================
   # Job 2: 单元测试 — Python 3.11/3.12/3.13 矩阵
