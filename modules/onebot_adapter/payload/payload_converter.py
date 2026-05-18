@@ -25,31 +25,22 @@ class PayloadConverter:
         """转换载荷为 kwargs dict"""
         if isinstance(payload, str):
             return {'content': payload}
-        if not isinstance(payload, dict):
-            return {'content': str(payload)}
-
-        msg_type = payload.get('type')
-        if msg_type == 'text':
-            return {'content': str(payload.get('data', {}).get('text', ''))}
-        if msg_type == 'markdown':
-            return PayloadConverter._convert_markdown(payload)
-        return {'content': str(payload)}
+        return PayloadConverter._convert_markdown(payload)
 
     @staticmethod
     def _convert_markdown(payload: dict[str, Any]) -> dict[str, Any]:
-        data = dict(payload.get('data', {}).get('data', {}))
         # keyboard 结构扁平化
-        if 'keyboard' in data:
-            buttons = data.pop('keyboard')
-            data['buttons'] = (
+        if 'keyboard' in payload:
+            buttons = payload.pop('keyboard')
+            payload['buttons'] = (
                 (buttons.get('rows') or [])
                 if isinstance(buttons, dict)
                 else (buttons or [])
             )
         # markdown 子字段提升到顶层
-        if 'markdown' in data:
-            md = data.pop('markdown')
+        if 'markdown' in payload:
+            md = payload.pop('markdown')
             if isinstance(md, dict):
-                data.update(md)
-        data['msg_type'] = MessageType.MSG_TYPE_MARKDOWN
-        return data
+                payload.update(md)
+        payload['msg_type'] = MessageType.MSG_TYPE_MARKDOWN
+        return payload
