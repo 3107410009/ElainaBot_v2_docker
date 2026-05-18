@@ -189,6 +189,7 @@ class Application(EventHandlerMixin):
         self._push_web_log('framework', {'source': '启动器', 'content': msg})
 
         self._stop_event = asyncio.Event()
+        self._install_signal_handlers()
         try:
             await self._stop_event.wait()
         except (KeyboardInterrupt, asyncio.CancelledError):
@@ -196,6 +197,25 @@ class Application(EventHandlerMixin):
         finally:
             await self.shutdown()
         return self._restart_requested
+
+    def _install_signal_handlers(self):
+        """注册 SIGTERM/SIGINT 信号处理器, 保证宝塔/systemd/Docker 关闭时优雅退出"""
+        import signal
+        loop = asyncio.get_running_loop()
+
+        def _handle(signame):
+            log.info(f'收到 {signame} 信号, 触发优雅关闭')
+            if self._stop_event and not self._stop_event.is_set():
+                self._stop_event.set()
+
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                # POSIX: async-safe 注册
+                loop.add_signal_handler(sig, _handle, sig.name)
+            except (NotImplementedError, RuntimeError):
+                # Windows 不支持 add_signal_handler, 用 signal.signal 兜底
+                with contextlib.suppress(ValueError, OSError):
+                    signal.signal(sig, lambda s, f: loop.call_soon_threadsafe(_handle, signal.Signals(s).name))
 
     # ===== 关闭 =====
 

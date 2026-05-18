@@ -128,7 +128,18 @@ async def restart_bot(event, match):
     await event.reply('🔄 正在重启...')
     await asyncio.sleep(0.5)
 
-    # 重启进程
+    # 优雅重启: 走 Application 流程, 刷写 SQLite 缓冲再 os.execv
+    try:
+        from core.application import get_app
+        app = get_app()
+        if app:
+            app._restart_requested = True
+            if app._stop_event:
+                app._stop_event.set()
+            return
+    except Exception:
+        pass
+    # 兜底: Application 不可用时直接重启
     python = sys.executable
     os.execv(python, [python] + sys.argv)
 

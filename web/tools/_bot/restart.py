@@ -57,6 +57,19 @@ if __name__ == "__main__":
 
 
 async def handle_restart(request: web.Request):
+    # 优雅重启: 触发 Application._stop_event, 让 shutdown() 刷写 SQLite 缓冲后由 main.py 自行 os.execv
+    try:
+        from core.application import get_app
+        app = get_app()
+        if app:
+            app._restart_requested = True
+            if app._stop_event:
+                app._stop_event.set()
+            return web.json_response({'success': True, 'message': '正在重启...'})
+    except Exception:
+        pass
+
+    # 兜底: Application 不可用 (旧路径), 用外部脚本重启
     main_py = os.path.join(_base_dir, 'main.py')
     if not os.path.exists(main_py):
         return web.json_response({'success': False, 'error': 'main.py 不存在'})
@@ -76,9 +89,9 @@ async def handle_restart(request: web.Request):
             subprocess.Popen(
                 [sys.executable, restarter],
                 cwd=_base_dir,
-                creationflags=subprocess.CREATE_NEW_CONSOLE,  # type: ignore[attr-defined]
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
             )
-            threading.Thread(target=lambda: (time.sleep(1), os._exit(0)), daemon=True).start()  # type: ignore[func-returns-value]
+            threading.Thread(target=lambda: (time.sleep(1), os._exit(0)), daemon=True).start()
         else:
             subprocess.Popen([sys.executable, restarter], cwd=_base_dir, start_new_session=True)
         return web.json_response({'success': True, 'message': '正在重启...'})
