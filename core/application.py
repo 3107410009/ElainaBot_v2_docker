@@ -105,6 +105,12 @@ class Application(EventHandlerMixin):
         global _app
         _app = self
 
+        try:
+            from core.bot import manager as _bot_manager_module
+            _bot_manager_module._bot_manager_ref = self
+        except Exception:
+            pass
+
         # 1) 初始化配置
         cfg.init(self._path('config'))
 
