@@ -1,21 +1,23 @@
 """用户统计: DAU、用户/群统计 (每个机器人独立统计)"""
 
+import asyncio
 import json as _json
 import time
-import asyncio
 from datetime import datetime, timedelta
+
 from core.plugin.decorators import handler
-from core.base.config import cfg
 
 
 def _get_bot(event):
     """获取当前事件对应的 BotInstance"""
-    from core.bot.manager import _bot_manager_ref
-    return _bot_manager_ref.get_bot(event.appid) if _bot_manager_ref else None
+    from core.application import get_app
+
+    app = get_app()
+    return app.get_bot(event.appid) if app else None
 
 
 def _mask_id(s, n=3):
-    return s if len(s) <= n * 2 else f"{s[:n]}****{s[-n:]}"
+    return s if len(s) <= n * 2 else f'{s[:n]}****{s[-n:]}'
 
 
 def _count_json_array(raw):
@@ -31,7 +33,7 @@ def _count_json_array(raw):
 def _fmt_diff(label, val, y_val, emoji):
     if y_val is not None:
         diff = val - y_val
-        arrow = f"🔺{diff}" if diff > 0 else f"🔻{abs(diff)}" if diff < 0 else "➖0"
+        arrow = f'🔺{diff}' if diff > 0 else f'🔻{abs(diff)}' if diff < 0 else '➖0'
         return f'{emoji} {label}: {val} ({arrow})'
     return f'{emoji} {label}: {val}'
 
@@ -39,38 +41,54 @@ def _fmt_diff(label, val, y_val, emoji):
 async def _query_today_stats(bot):
     """实时查询今日消息统计 (直接读 message.db)"""
     today = datetime.now().strftime('%Y-%m-%d')
-    rows = bot.log_service.query('message', """
+    rows = bot.log_service.query(
+        'message',
+        """
         SELECT COUNT(*) AS total,
                COUNT(DISTINCT CASE WHEN user_id != '' THEN user_id END) AS users,
                COUNT(DISTINCT CASE WHEN group_id != '' AND group_id != 'c2c'
                                    THEN group_id END) AS groups_,
                COUNT(CASE WHEN group_id = 'c2c' OR group_id = '' THEN 1 END) AS private
         FROM log
-    """, date=today)
+    """,
+        date=today,
+    )
     if not rows or rows[0]['total'] == 0:
         return None
 
     stats = rows[0]
     # 高峰时段
-    peak = bot.log_service.query('message', """
+    peak = bot.log_service.query(
+        'message',
+        """
         SELECT substr(timestamp, 12, 2) AS hr, COUNT(*) AS c
         FROM log GROUP BY hr ORDER BY c DESC LIMIT 1
-    """, date=today)
+    """,
+        date=today,
+    )
     stats['peak_hour'] = int(peak[0]['hr']) if peak and peak[0].get('hr') else 0
     stats['peak_hour_count'] = peak[0]['c'] if peak else 0
 
     # Top 群
-    stats['top_groups'] = bot.log_service.query('message', """
+    stats['top_groups'] = bot.log_service.query(
+        'message',
+        """
         SELECT group_id, COUNT(*) AS c FROM log
         WHERE group_id != '' AND group_id != 'c2c'
         GROUP BY group_id ORDER BY c DESC LIMIT 3
-    """, date=today)
+    """,
+        date=today,
+    )
 
     # Top 用户
-    stats['top_users'] = bot.log_service.query('message', """
+    stats['top_users'] = bot.log_service.query(
+        'message',
+        """
         SELECT user_id, COUNT(*) AS c FROM log
         WHERE user_id != '' GROUP BY user_id ORDER BY c DESC LIMIT 3
-    """, date=today)
+    """,
+        date=today,
+    )
 
     return stats
 
@@ -79,15 +97,20 @@ async def _query_yesterday_same_period(bot):
     """查询昨日同时段统计 (截至当前时刻)"""
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     now = datetime.now()
-    time_limit = f"{now.hour:02d}:{now.minute:02d}:00"
-    rows = bot.log_service.query('message', """
+    time_limit = f'{now.hour:02d}:{now.minute:02d}:00'
+    rows = bot.log_service.query(
+        'message',
+        """
         SELECT COUNT(*) AS total,
                COUNT(DISTINCT CASE WHEN user_id != '' THEN user_id END) AS users,
                COUNT(DISTINCT CASE WHEN group_id != '' AND group_id != 'c2c'
                                    THEN group_id END) AS groups_,
                COUNT(CASE WHEN group_id = 'c2c' OR group_id = '' THEN 1 END) AS private
         FROM log WHERE TIME(timestamp) <= ?
-    """, (time_limit,), date=yesterday)
+    """,
+        (time_limit,),
+        date=yesterday,
+    )
     return rows[0] if rows and rows[0]['total'] > 0 else None
 
 
@@ -104,10 +127,38 @@ def _build_dau_message(event, stats, date, elapsed_ms, y_stats=None, is_today=Fa
     y_total = y_stats['total'] if y_stats else None
     y_private = y_stats['private'] if y_stats else None
 
-    info.append(_fmt_diff('活跃用户数', stats.get('users', stats.get('active_users', 0)), y_users, '👤'))
-    info.append(_fmt_diff('活跃群聊数', stats.get('groups_', stats.get('active_groups', 0)), y_groups, '👥'))
-    info.append(_fmt_diff('消息总数', stats.get('total', stats.get('total_messages', 0)), y_total, '💬'))
-    info.append(_fmt_diff('私聊消息', stats.get('private', stats.get('private_messages', 0)), y_private, '📱'))
+    info.append(
+        _fmt_diff(
+            '活跃用户数',
+            stats.get('users', stats.get('active_users', 0)),
+            y_users,
+            '👤',
+        )
+    )
+    info.append(
+        _fmt_diff(
+            '活跃群聊数',
+            stats.get('groups_', stats.get('active_groups', 0)),
+            y_groups,
+            '👥',
+        )
+    )
+    info.append(
+        _fmt_diff(
+            '消息总数',
+            stats.get('total', stats.get('total_messages', 0)),
+            y_total,
+            '💬',
+        )
+    )
+    info.append(
+        _fmt_diff(
+            '私聊消息',
+            stats.get('private', stats.get('private_messages', 0)),
+            y_private,
+            '📱',
+        )
+    )
 
     peak_hour = stats.get('peak_hour', 0)
     peak_count = stats.get('peak_hour_count', 0)
@@ -121,7 +172,7 @@ def _build_dau_message(event, stats, date, elapsed_ms, y_stats=None, is_today=Fa
         for i, g in enumerate(top_groups[:2], 1):
             gid = g.get('group_id', '')
             cnt = g.get('c', g.get('message_count', 0))
-            info.append(f"  {i}. {_mask_id(gid)} ({cnt}条)")
+            info.append(f'  {i}. {_mask_id(gid)} ({cnt}条)')
 
     # Top 用户
     top_users = stats.get('top_users', [])
@@ -130,7 +181,7 @@ def _build_dau_message(event, stats, date, elapsed_ms, y_stats=None, is_today=Fa
         for i, u in enumerate(top_users[:2], 1):
             uid = u.get('user_id', '')
             cnt = u.get('c', u.get('message_count', 0))
-            info.append(f"  {i}. {_mask_id(uid)} ({cnt}条)")
+            info.append(f'  {i}. {_mask_id(uid)} ({cnt}条)')
 
     info.append(f'🕒 查询耗时: {elapsed_ms}ms')
     return '\n'.join(info)
@@ -138,23 +189,23 @@ def _build_dau_message(event, stats, date, elapsed_ms, y_stats=None, is_today=Fa
 
 # ==================== 用户统计 ====================
 
+
 @handler(r'^用户统计$', name='用户统计', desc='查看当前机器人的用户/群统计', owner_only=True)
 async def get_stats(event, match):
     bot = _get_bot(event)
     if not bot:
-        return await event.reply("❌ 无法获取机器人实例")
+        return await event.reply('❌ 无法获取机器人实例')
 
     t0 = time.time()
     ls = bot.log_service
 
     # 并行查询 data.db 中的用户/群/好友数
-    users_q = ls.db_fetch_value("SELECT COUNT(*) FROM users", default=0)
-    groups_q = ls.db_fetch_value("SELECT COUNT(*) FROM groups_users", default=0)
-    members_q = ls.db_fetch_value("SELECT COUNT(*) FROM members", default=0)
-    all_groups_q = ls.db_fetch_all("SELECT group_id, users FROM groups_users")
+    users_q = ls.db_fetch_value('SELECT COUNT(*) FROM users', default=0)
+    groups_q = ls.db_fetch_value('SELECT COUNT(*) FROM groups_users', default=0)
+    members_q = ls.db_fetch_value('SELECT COUNT(*) FROM members', default=0)
+    all_groups_q = ls.db_fetch_all('SELECT group_id, users FROM groups_users')
 
-    user_count, group_count, member_count, all_groups = await asyncio.gather(
-        users_q, groups_q, members_q, all_groups_q)
+    user_count, group_count, member_count, all_groups = await asyncio.gather(users_q, groups_q, members_q, all_groups_q)
 
     # Python 端统计各群人数 (不依赖 SQLite JSON 扩展)
     group_counts = [(g['group_id'], _count_json_array(g.get('users'))) for g in (all_groups or [])]
@@ -193,11 +244,17 @@ async def get_stats(event, match):
 
 # ==================== DAU ====================
 
-@handler(r'^dau(?:\s+)?(\d{4})?$', name='DAU', desc='查看日活统计 (dau / dau0503)', owner_only=True)
+
+@handler(
+    r'^dau(?:\s+)?(\d{4})?$',
+    name='DAU',
+    desc='查看日活统计 (dau / dau0503)',
+    owner_only=True,
+)
 async def handle_dau(event, match):
     bot = _get_bot(event)
     if not bot:
-        return await event.reply("❌ 无法获取机器人实例")
+        return await event.reply('❌ 无法获取机器人实例')
 
     date_str = match.group(1)
     if date_str:
@@ -215,11 +272,10 @@ async def _handle_today_dau(event, bot):
         loop.run_in_executor(None, lambda: _query_yesterday_same_period_sync(bot)),
     )
     if not stats:
-        return await event.reply(f"<@{event.user_id}>\n❌ 今日暂无消息数据")
+        return await event.reply(f'<@{event.user_id}>\n❌ 今日暂无消息数据')
 
     elapsed = round((time.time() - t0) * 1000)
-    msg = _build_dau_message(event, stats, datetime.now(), elapsed,
-                             y_stats=y_stats, is_today=True)
+    msg = _build_dau_message(event, stats, datetime.now(), elapsed, y_stats=y_stats, is_today=True)
     await event.reply(msg)
 
 
@@ -227,15 +283,20 @@ def _query_yesterday_same_period_sync(bot):
     """同步版本 (在线程池中执行)"""
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     now = datetime.now()
-    time_limit = f"{now.hour:02d}:{now.minute:02d}:00"
-    rows = bot.log_service.query('message', """
+    time_limit = f'{now.hour:02d}:{now.minute:02d}:00'
+    rows = bot.log_service.query(
+        'message',
+        """
         SELECT COUNT(*) AS total,
                COUNT(DISTINCT CASE WHEN user_id != '' THEN user_id END) AS users,
                COUNT(DISTINCT CASE WHEN group_id != '' AND group_id != 'c2c'
                                    THEN group_id END) AS groups_,
                COUNT(CASE WHEN group_id = 'c2c' OR group_id = '' THEN 1 END) AS private
         FROM log WHERE TIME(timestamp) <= ?
-    """, (time_limit,), date=yesterday)
+    """,
+        (time_limit,),
+        date=yesterday,
+    )
     return rows[0] if rows and rows[0]['total'] > 0 else None
 
 
@@ -250,21 +311,24 @@ async def _handle_history_dau(event, bot, date_str):
         if target > datetime.now():
             target = datetime(year - 1, month, day)
     except ValueError:
-        return await event.reply("❌ 日期格式错误 (MMDD)")
+        return await event.reply('❌ 日期格式错误 (MMDD)')
 
-    from core.bot.manager import _bot_manager_ref
-    dau_svc = _bot_manager_ref.dau_service if _bot_manager_ref else None
+    from core.application import get_app
+
+    app = get_app()
+    dau_svc = app.dau_service if app else None
     if not dau_svc:
-        return await event.reply("❌ DAU 服务未启动")
+        return await event.reply('❌ DAU 服务未启动')
 
     data = await dau_svc.load(event.appid, target.strftime('%Y-%m-%d'))
     if not data:
-        return await event.reply(f"<@{event.user_id}>\n❌ {date_str[:2]}-{date_str[2:]} 无 DAU 数据")
+        return await event.reply(f'<@{event.user_id}>\n❌ {date_str[:2]}-{date_str[2:]} 无 DAU 数据')
 
     # 将 dau.db 行转为统计格式
     detail = data.get('message_stats_detail', {})
     if isinstance(detail, str):
         import json
+
         try:
             detail = json.loads(detail)
         except Exception:

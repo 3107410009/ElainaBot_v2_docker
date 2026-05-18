@@ -1,11 +1,9 @@
 """QQ 开放平台 API — 扫码登录/数据查询/模板管理/白名单"""
 
-import os
-import re
 import json
-import time
 import logging
-import asyncio
+import os
+import time
 from urllib.parse import quote
 
 from aiohttp import web
@@ -28,7 +26,7 @@ def _load_data():
     global _openapi_user_data
     try:
         if os.path.exists(_data_file):
-            with open(_data_file, 'r', encoding='utf-8') as f:
+            with open(_data_file, encoding='utf-8') as f:
                 _openapi_user_data = json.load(f)
     except Exception:
         _openapi_user_data = {}
@@ -56,6 +54,7 @@ def _get_bot_api():
     if _bot_api is None:
         try:
             from web.tools._bot.api import get_bot_api
+
             _bot_api = get_bot_api()
         except ImportError:
             _bot_api = None
@@ -83,6 +82,7 @@ def _require_api_and_login(body):
 
 # ==================== 登录 ====================
 
+
 async def handle_start_login(request: web.Request):
     api = _get_bot_api()
     if not api:
@@ -90,11 +90,15 @@ async def handle_start_login(request: web.Request):
     body = await request.json()
     user_id = body.get('user_id', 'web_user')
     login_data = await api.create_login_qr()
-    log.info(f"[OpenAPI] create_login_qr 返回: {login_data}")
+    log.info(f'[OpenAPI] create_login_qr 返回: {login_data}')
     if login_data.get('status') != 'success' or not login_data.get('url') or not login_data.get('qr'):
-        return _err(f"获取二维码失败: {login_data.get('message', str(login_data))}")
+        return _err(f'获取二维码失败: {login_data.get("message", str(login_data))}')
     _openapi_login_tasks[user_id] = (time.time(), {'qr': login_data['qr']})
-    return _ok(login_url=login_data['url'], qr_code=login_data['qr'], message='请扫描二维码登录')
+    return _ok(
+        login_url=login_data['url'],
+        qr_code=login_data['qr'],
+        message='请扫描二维码登录',
+    )
 
 
 async def handle_check_login(request: web.Request):
@@ -112,8 +116,13 @@ async def handle_check_login(request: web.Request):
         _openapi_user_data[user_id] = {'type': 'ok', **ld}
         _openapi_login_tasks.pop(user_id, None)
         _save_data()
-        return web.json_response({'success': True, 'status': 'logged_in',
-                                  'data': {'uin': ld.get('uin'), 'appId': ld.get('appId')}})
+        return web.json_response(
+            {
+                'success': True,
+                'status': 'logged_in',
+                'data': {'uin': ld.get('uin'), 'appId': ld.get('appId')},
+            }
+        )
     return web.json_response({'success': True, 'status': 'waiting', 'message': '等待扫码'})
 
 
@@ -136,6 +145,7 @@ async def handle_logout(request: web.Request):
 
 # ==================== 机器人数据 ====================
 
+
 async def handle_get_botlist(request: web.Request):
     body = await request.json()
     api, ud, err = _require_api_and_login(body)
@@ -145,7 +155,7 @@ async def handle_get_botlist(request: web.Request):
     if res.get('code') != 0:
         return _err('登录失效')
     apps = res.get('data', {}).get('apps', [])
-    log.info(f"[OpenAPI] botlist apps 样本: {apps[:1] if apps else '空'}")
+    log.info(f'[OpenAPI] botlist apps 样本: {apps[:1] if apps else "空"}')
     return _ok(data={'uin': ud.get('uin'), 'apps': apps})
 
 
@@ -156,7 +166,12 @@ async def handle_get_botdata(request: web.Request):
         return err
     appid = body.get('appid') or ud.get('appId')
     try:
-        cred = dict(uin=ud.get('uin'), quid=ud.get('developerId'), ticket=ud.get('ticket'), appid=appid)
+        cred = dict(
+            uin=ud.get('uin'),
+            quid=ud.get('developerId'),
+            ticket=ud.get('ticket'),
+            appid=appid,
+        )
         d1 = await api.get_bot_data(**cred, data_type=1)
         d2 = await api.get_bot_data(**cred, data_type=2)
         d3 = await api.get_bot_data(**cred, data_type=3)
@@ -174,18 +189,31 @@ async def handle_get_botdata(request: web.Request):
             g = group_data[i] if i < len(group_data) else {}
             fr = friend_data[i] if i < len(friend_data) else {}
             dd = {
-                'date': m.get('报告日期', '0'), 'up_messages': m.get('上行消息量', '0'),
-                'up_users': m.get('上行消息人数', '0'), 'down_messages': m.get('下行消息量', '0'),
+                'date': m.get('报告日期', '0'),
+                'up_messages': m.get('上行消息量', '0'),
+                'up_users': m.get('上行消息人数', '0'),
+                'down_messages': m.get('下行消息量', '0'),
                 'total_messages': m.get('总消息量', '0'),
-                'current_groups': g.get('现有群组', '0'), 'used_groups': g.get('已使用群组', '0'),
-                'new_groups': g.get('新增群组', '0'), 'removed_groups': g.get('移除群组', '0'),
-                'current_friends': fr.get('现有好友数', '0'), 'used_friends': fr.get('已使用好友数', '0'),
-                'new_friends': fr.get('新增好友数', '0'), 'removed_friends': fr.get('移除好友数', '0'),
+                'current_groups': g.get('现有群组', '0'),
+                'used_groups': g.get('已使用群组', '0'),
+                'new_groups': g.get('新增群组', '0'),
+                'removed_groups': g.get('移除群组', '0'),
+                'current_friends': fr.get('现有好友数', '0'),
+                'used_friends': fr.get('已使用好友数', '0'),
+                'new_friends': fr.get('新增好友数', '0'),
+                'removed_friends': fr.get('移除好友数', '0'),
             }
             processed.append(dd)
             total_up += int(dd['up_users'])
         avg_dau = round(total_up / 30, 2) if msg_data else 0
-        return _ok(data={'uin': ud.get('uin'), 'appid': appid, 'avg_dau': avg_dau, 'days_data': processed})
+        return _ok(
+            data={
+                'uin': ud.get('uin'),
+                'appid': appid,
+                'avg_dau': avg_dau,
+                'days_data': processed,
+            }
+        )
     except Exception as e:
         return _err(str(e))
 
@@ -198,13 +226,20 @@ async def handle_get_notifications(request: web.Request):
     res = await api.get_private_messages(uin=ud.get('uin'), quid=ud.get('developerId'), ticket=ud.get('ticket'))
     if res.get('code', 0) != 0:
         return _err('获取通知失败')
-    msgs = [{'content': m.get('content', ''), 'send_time': m.get('send_time', ''),
-             'type': m.get('type', ''), 'title': m.get('title', '')}
-            for m in res.get('messages', [])[:20]]
+    msgs = [
+        {
+            'content': m.get('content', ''),
+            'send_time': m.get('send_time', ''),
+            'type': m.get('type', ''),
+            'title': m.get('title', ''),
+        }
+        for m in res.get('messages', [])[:20]
+    ]
     return _ok(data={'messages': msgs})
 
 
 # ==================== 验证登录 ====================
+
 
 async def handle_verify_saved_login(request: web.Request):
     api = _get_bot_api()
@@ -219,8 +254,15 @@ async def handle_verify_saved_login(request: web.Request):
     try:
         res = await api.get_bot_list(uin=ud.get('uin'), quid=ud.get('developerId'), ticket=ud.get('ticket'))
         if res.get('code') == 0:
-            return _ok(valid=True, data={'uin': ud.get('uin'), 'appId': ud.get('appId'),
-                                         'developerId': ud.get('developerId')}, message='登录状态有效')
+            return _ok(
+                valid=True,
+                data={
+                    'uin': ud.get('uin'),
+                    'appId': ud.get('appId'),
+                    'developerId': ud.get('developerId'),
+                },
+                message='登录状态有效',
+            )
     except Exception:
         pass
     _openapi_user_data.pop(user_id, None)
@@ -230,6 +272,7 @@ async def handle_verify_saved_login(request: web.Request):
 
 # ==================== 白名单 ====================
 
+
 async def handle_get_whitelist(request: web.Request):
     body = await request.json()
     api, ud, err = _require_api_and_login(body)
@@ -238,12 +281,21 @@ async def handle_get_whitelist(request: web.Request):
     appid = body.get('appid') or ud.get('appId')
     if not appid:
         return _err('缺少 AppID')
-    res = await api.get_white_list(appid=appid, uin=ud.get('uin'), uid=ud.get('developerId'), ticket=ud.get('ticket'))
+    res = await api.get_white_list(
+        appid=appid,
+        uin=ud.get('uin'),
+        uid=ud.get('developerId'),
+        ticket=ud.get('ticket'),
+    )
     if res.get('code', 0) != 0:
         return _err('获取白名单失败')
-    ips = [{'ip': ip.get('ip', '') if isinstance(ip, dict) else ip,
-            'description': ip.get('desc', '') if isinstance(ip, dict) else ''}
-           for ip in res.get('data', [])]
+    ips = [
+        {
+            'ip': ip.get('ip', '') if isinstance(ip, dict) else ip,
+            'description': ip.get('desc', '') if isinstance(ip, dict) else '',
+        }
+        for ip in res.get('data', [])
+    ]
     return _ok(data={'ip_list': ips, 'total': len(ips)})
 
 
@@ -256,7 +308,13 @@ async def _batch_whitelist_op(body, action='add'):
     qrcode, ip_list = body.get('qrcode', ''), body.get('ip_list', [])
     if not all([appid, qrcode, ip_list]):
         return _err('参数不完整')
-    cred = dict(appid=appid, uin=ud.get('uin'), uid=ud.get('developerId'), ticket=ud.get('ticket'), qrcode=qrcode)
+    cred = dict(
+        appid=appid,
+        uin=ud.get('uin'),
+        uid=ud.get('developerId'),
+        ticket=ud.get('ticket'),
+        qrcode=qrcode,
+    )
     success_count, failed_ips = 0, []
     for ip in ip_list:
         res = await api.update_white_list(**cred, ip=ip, action=action)
@@ -264,8 +322,14 @@ async def _batch_whitelist_op(body, action='add'):
             success_count += 1
         else:
             failed_ips.append(ip)
-    return _ok(message=f'成功 {success_count} 个，失败 {len(failed_ips)} 个',
-               data={'success_count': success_count, 'failed_count': len(failed_ips), 'failed_ips': failed_ips})
+    return _ok(
+        message=f'成功 {success_count} 个，失败 {len(failed_ips)} 个',
+        data={
+            'success_count': success_count,
+            'failed_count': len(failed_ips),
+            'failed_ips': failed_ips,
+        },
+    )
 
 
 async def handle_update_whitelist(request: web.Request):
@@ -280,14 +344,18 @@ async def handle_get_delete_qr(request: web.Request):
     appid = body.get('appid') or ud.get('appId')
     if not appid:
         return _err('缺少 AppID')
-    qr_result = await api.create_white_login_qr(appid=appid, uin=ud.get('uin'),
-                                                uid=ud.get('developerId'), ticket=ud.get('ticket'))
+    qr_result = await api.create_white_login_qr(
+        appid=appid,
+        uin=ud.get('uin'),
+        uid=ud.get('developerId'),
+        ticket=ud.get('ticket'),
+    )
     if qr_result.get('code', 0) != 0:
         return _err('创建授权二维码失败')
     qrcode, qr_url = qr_result.get('qrcode', ''), qr_result.get('url', '')
     if not qrcode or not qr_url:
         return _err('获取授权二维码失败')
-    qr_img = f"https://api.2dcode.biz/v1/create-qr-code?data={quote(qr_url)}"
+    qr_img = f'https://api.2dcode.biz/v1/create-qr-code?data={quote(qr_url)}'
     return _ok(qrcode=qrcode, url=qr_img, message='获取授权二维码成功')
 
 
@@ -300,8 +368,13 @@ async def handle_check_delete_auth(request: web.Request):
     qrcode = body.get('qrcode', '')
     if not appid or not qrcode:
         return _err('缺少必要参数')
-    auth_result = await api.verify_qr_auth(appid=appid, uin=ud.get('uin'),
-                                           uid=ud.get('developerId'), ticket=ud.get('ticket'), qrcode=qrcode)
+    auth_result = await api.verify_qr_auth(
+        appid=appid,
+        uin=ud.get('uin'),
+        uid=ud.get('developerId'),
+        ticket=ud.get('ticket'),
+        qrcode=qrcode,
+    )
     authorized = auth_result.get('code', 0) == 0
     return _ok(authorized=authorized, message='授权成功' if authorized else '等待授权中')
 
@@ -315,8 +388,15 @@ async def handle_execute_delete_ip(request: web.Request):
     ip, qrcode = body.get('ip', '').strip(), body.get('qrcode', '')
     if not all([appid, ip, qrcode]):
         return _err('缺少必要参数')
-    res = await api.update_white_list(appid=appid, uin=ud.get('uin'), uid=ud.get('developerId'),
-                                      ticket=ud.get('ticket'), qrcode=qrcode, ip=ip, action='del')
+    res = await api.update_white_list(
+        appid=appid,
+        uin=ud.get('uin'),
+        uid=ud.get('developerId'),
+        ticket=ud.get('ticket'),
+        qrcode=qrcode,
+        ip=ip,
+        action='del',
+    )
     if res.get('code', 0) != 0:
         return _err(res.get('msg') or '删除 IP 失败')
     return _ok(message='IP 删除成功', data={'ip': ip, 'appid': appid})

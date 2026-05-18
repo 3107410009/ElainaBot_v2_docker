@@ -1,12 +1,12 @@
 """黑名单/权限/插件机器人绑定 — PluginManager 的 Mixin"""
 
-import os
 import asyncio
+import os
 
-from core.base.logger import get_logger, FRAMEWORK
 from core.base.config import cfg
+from core.base.logger import FRAMEWORK, get_logger
 
-log = get_logger(FRAMEWORK, "插件管理")
+log = get_logger(FRAMEWORK, '插件管理')
 
 
 class _BlacklistMixin:
@@ -17,16 +17,18 @@ class _BlacklistMixin:
     def _load_blacklists(self):
         data_dir = os.path.join(self._base_dir, 'data')
         os.makedirs(data_dir, exist_ok=True)
-        for attr, fname in (('_blacklist_users', 'blacklist_users.txt'),
-                             ('_blacklist_groups', 'blacklist_groups.txt')):
+        for attr, fname in (
+            ('_blacklist_users', 'blacklist_users.txt'),
+            ('_blacklist_groups', 'blacklist_groups.txt'),
+        ):
             path = os.path.join(data_dir, fname)
             items = set()
             if os.path.isfile(path):
                 try:
-                    with open(path, 'r', encoding='utf-8') as f:
+                    with open(path, encoding='utf-8') as f:
                         items = {line.strip() for line in f if line.strip() and not line.startswith('#')}
                 except Exception as e:
-                    log.warning(f"加载黑名单失败 [{fname}]: {e}")
+                    log.warning(f'加载黑名单失败 [{fname}]: {e}')
             setattr(self, attr, items)
 
     @staticmethod
@@ -46,18 +48,22 @@ class _BlacklistMixin:
             with open(path, 'w', encoding='utf-8') as f:
                 f.write('\n'.join(items) + '\n' if items else '')
         except Exception as e:
-            log.warning(f"保存黑名单失败 [{fname}]: {e}")
+            log.warning(f'保存黑名单失败 [{fname}]: {e}')
 
     def _check_blacklist(self, event):
         appid = event.appid or self._appid
         uid, gid = event.user_id or '', event.group_id or ''
-        if uid and cfg.get_bot_setting(appid, 'blacklist.user_enabled', False) and (
-                uid in self._blacklist_users or
-                uid in (cfg.get_bot_setting(appid, 'blacklist.user_list', []) or [])):
+        if (
+            uid
+            and cfg.get_bot_setting(appid, 'blacklist.user_enabled', False)
+            and (uid in self._blacklist_users or uid in (cfg.get_bot_setting(appid, 'blacklist.user_list', []) or []))
+        ):
             return 'user'
-        if gid and cfg.get_bot_setting(appid, 'blacklist.group_enabled', False) and (
-                gid in self._blacklist_groups or
-                gid in (cfg.get_bot_setting(appid, 'blacklist.group_list', []) or [])):
+        if (
+            gid
+            and cfg.get_bot_setting(appid, 'blacklist.group_enabled', False)
+            and (gid in self._blacklist_groups or gid in (cfg.get_bot_setting(appid, 'blacklist.group_list', []) or []))
+        ):
             return 'group'
         return None
 
@@ -87,19 +93,17 @@ class _BlacklistMixin:
 
     def _load_plugin_bots(self):
         import yaml
+
         path = os.path.join(self._base_dir, 'data', 'plugin_bots.yaml')
         if not os.path.isfile(path):
             self._plugin_bots = {}
             return
         try:
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(path, encoding='utf-8') as f:
                 data = yaml.safe_load(f) or {}
-            self._plugin_bots = {
-                str(k): [str(v) for v in vs] if isinstance(vs, list) else []
-                for k, vs in data.items()
-            }
+            self._plugin_bots = {str(k): [str(v) for v in vs] if isinstance(vs, list) else [] for k, vs in data.items()}
         except Exception as e:
-            log.warning(f"加载插件机器人绑定失败: {e}")
+            log.warning(f'加载插件机器人绑定失败: {e}')
             self._plugin_bots = {}
 
     def _save_plugin_bots(self):
@@ -107,22 +111,26 @@ class _BlacklistMixin:
 
     def _write_plugin_bots_sync(self, data):
         import yaml
+
         path = os.path.join(self._base_dir, 'data', 'plugin_bots.yaml')
         os.makedirs(os.path.dirname(path), exist_ok=True)
         try:
             with open(path, 'w', encoding='utf-8') as f:
-                yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                yaml.dump(
+                    data,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
         except Exception as e:
-            log.warning(f"保存插件机器人绑定失败: {e}")
+            log.warning(f'保存插件机器人绑定失败: {e}')
 
     def get_plugin_bots(self):
         return dict(self._plugin_bots)
 
     def set_plugin_bots(self, data):
-        self._plugin_bots = {
-            str(k): [str(v) for v in vs] if isinstance(vs, list) else []
-            for k, vs in data.items()
-        }
+        self._plugin_bots = {str(k): [str(v) for v in vs] if isinstance(vs, list) else [] for k, vs in data.items()}
         self._save_plugin_bots()
         self._apply_bot_bindings()
 

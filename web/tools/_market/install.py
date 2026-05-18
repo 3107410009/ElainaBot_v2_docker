@@ -1,31 +1,36 @@
 """插件市场 — 安装/卸载/预览/版本对比"""
 
+import ast
+import io
 import os
 import re
-import io
-import ast
 import zipfile
 
 from aiohttp import web
 
-from web.tools._market.shared import (
-    _plugins_dir, _modules_dir, _safe_name, _convert_github_url,
-    _repo_raw_url, _github_to_archive, _load_market_mirror, log,
-)
 from web.tools._market.fetch import (
-    _fetch_plugin_json, _extract_plugins, _download_file,
+    _download_file,
 )
-
+from web.tools._market.shared import (
+    _convert_github_url,
+    _github_to_archive,
+    _load_market_mirror,
+    _modules_dir,
+    _plugins_dir,
+    _repo_raw_url,
+    _safe_name,
+    log,
+)
 
 # ==================== 版本/已安装 ====================
+
 
 def _get_installed_names():
     """获取已安装的插件目录名列表"""
     plugins_dir = _plugins_dir()
     if not os.path.isdir(plugins_dir):
         return set()
-    return {d for d in os.listdir(plugins_dir)
-            if os.path.isdir(os.path.join(plugins_dir, d)) and not d.startswith(('.', '__'))}
+    return {d for d in os.listdir(plugins_dir) if os.path.isdir(os.path.join(plugins_dir, d)) and not d.startswith(('.', '__'))}
 
 
 def _get_installed_module_names():
@@ -33,8 +38,7 @@ def _get_installed_module_names():
     modules_dir = _modules_dir()
     if not os.path.isdir(modules_dir):
         return set()
-    return {d for d in os.listdir(modules_dir)
-            if os.path.isdir(os.path.join(modules_dir, d)) and not d.startswith(('.', '__'))}
+    return {d for d in os.listdir(modules_dir) if os.path.isdir(os.path.join(modules_dir, d)) and not d.startswith(('.', '__'))}
 
 
 def _get_local_module_version(name):
@@ -43,12 +47,10 @@ def _get_local_module_version(name):
     if not os.path.isfile(entry):
         return ''
     try:
-        with open(entry, 'r', encoding='utf-8') as f:
+        with open(entry, encoding='utf-8') as f:
             tree = ast.parse(f.read())
         for node in ast.iter_child_nodes(tree):
-            if (isinstance(node, ast.Assign) and len(node.targets) == 1
-                    and isinstance(node.targets[0], ast.Name)
-                    and node.targets[0].id == '__module_meta__'):
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id == '__module_meta__':
                 meta = ast.literal_eval(node.value)
                 return meta.get('version', '')
     except Exception:
@@ -70,11 +72,11 @@ def _version_lt(local, remote):
 
 # ==================== 预览 ====================
 
+
 def _preview_zip(content):
     try:
         with zipfile.ZipFile(io.BytesIO(content), 'r') as zf:
-            py_files = [f for f in zf.namelist()
-                        if f.endswith('.py') and not f.startswith('__') and '/__pycache__/' not in f]
+            py_files = [f for f in zf.namelist() if f.endswith('.py') and not f.startswith('__') and '/__pycache__/' not in f]
             files = []
             for pf in py_files[:10]:
                 try:
@@ -82,8 +84,14 @@ def _preview_zip(content):
                     files.append({'name': pf, 'content': fc[:5000], 'size': len(fc)})
                 except Exception:
                     pass
-            return web.json_response({'success': True, 'type': 'zip', 'files': files,
-                                      'total_files': len(py_files)})
+            return web.json_response(
+                {
+                    'success': True,
+                    'type': 'zip',
+                    'files': files,
+                    'total_files': len(py_files),
+                }
+            )
     except Exception as e:
         return web.json_response({'success': False, 'message': str(e)})
 
@@ -112,8 +120,15 @@ async def handle_market_preview(request: web.Request):
             fname = url.split('/')[-1].split('?')[0]
             if not fname.endswith('.py'):
                 fname = 'plugin.py'
-            return web.json_response({'success': True, 'type': 'py', 'filename': fname,
-                                      'content': code, 'size': len(code)})
+            return web.json_response(
+                {
+                    'success': True,
+                    'type': 'py',
+                    'filename': fname,
+                    'content': code,
+                    'size': len(code),
+                }
+            )
         return web.json_response({'success': False, 'message': '不支持的文件类型'})
     except Exception as e:
         return web.json_response({'success': False, 'message': str(e)})
@@ -121,11 +136,12 @@ async def handle_market_preview(request: web.Request):
 
 # ==================== 安装 ====================
 
+
 def _install_py(content, plugin_name, url):
     plugins_dir = _plugins_dir()
     fname = url.split('/')[-1].split('?')[0]
     if not fname.endswith('.py'):
-        fname = f"{plugin_name}.py"
+        fname = f'{plugin_name}.py'
     safe = _safe_name(plugin_name) or fname.replace('.py', '')
     dest_dir = os.path.join(plugins_dir, safe)
     os.makedirs(dest_dir, exist_ok=True)
@@ -153,7 +169,7 @@ def _install_zip(content, plugin_name):
             for fp in flist:
                 if fp.endswith('/') or '__pycache__' in fp or '/.git/' in fp:
                     continue
-                rel = fp[len(root_prefix):] if strip_root and fp.startswith(root_prefix) else fp
+                rel = fp[len(root_prefix) :] if strip_root and fp.startswith(root_prefix) else fp
                 if not rel:
                     continue
                 dest = os.path.join(dest_dir, rel)
@@ -163,11 +179,13 @@ def _install_zip(content, plugin_name):
                 extracted.append(rel)
             py_count = sum(1 for f in extracted if f.endswith('.py'))
             total = len(extracted)
-            log.info(f"插件 {safe} 安装完成: {total} 个文件 ({py_count} 个 .py)")
-            return {'success': True,
-                    'message': f'已安装到 plugins/{safe}/ ({total} 个文件, {py_count} 个 Python)',
-                    'path': f'plugins/{safe}',
-                    'files': total}
+            log.info(f'插件 {safe} 安装完成: {total} 个文件 ({py_count} 个 .py)')
+            return {
+                'success': True,
+                'message': f'已安装到 plugins/{safe}/ ({total} 个文件, {py_count} 个 Python)',
+                'path': f'plugins/{safe}',
+                'files': total,
+            }
     except Exception as e:
         return {'success': False, 'message': str(e)}
 
@@ -177,6 +195,7 @@ def _clean_module_dir(dest_dir):
     if not os.path.isdir(dest_dir):
         return
     import shutil
+
     for item in os.listdir(dest_dir):
         if item == 'data':
             continue
@@ -195,7 +214,7 @@ async def _install_module(github_url, module_name, branch='main', mirror=None):
     """
     safe = _safe_name(module_name) or 'unknown'
     url = _github_to_archive(github_url, branch)
-    log.info(f"模块安装: {safe} ← {url}")
+    log.info(f'模块安装: {safe} ← {url}')
 
     content = await _download_file(url, mirror=mirror)
     if content is None:
@@ -218,7 +237,10 @@ async def _install_module(github_url, module_name, branch='main', mirror=None):
                 # 判断是否为框架仓库 (精确匹配官方仓库)
                 is_framework = 'ElainaCore/ElainaBot_v2' in github_url
                 if is_framework:
-                    return {'success': False, 'message': f'框架仓库中未找到 modules/{safe}/'}
+                    return {
+                        'success': False,
+                        'message': f'框架仓库中未找到 modules/{safe}/',
+                    }
                 # 第三方模块: 整个仓库就是模块内容
                 mod_prefix = root_prefix
                 mod_files = [f for f in flist if f.startswith(mod_prefix) and not f.endswith('/')]
@@ -234,7 +256,7 @@ async def _install_module(github_url, module_name, branch='main', mirror=None):
             for fp in mod_files:
                 if '__pycache__' in fp or '/.git/' in fp:
                     continue
-                rel = fp[len(mod_prefix):]
+                rel = fp[len(mod_prefix) :]
                 if not rel:
                     continue
                 # 保留用户已有的 data/ 配置
@@ -248,10 +270,13 @@ async def _install_module(github_url, module_name, branch='main', mirror=None):
                     dst.write(src.read())
                 extracted.append(rel)
 
-            log.info(f"模块 {safe} 安装完成: {len(extracted)} 个文件")
-            return {'success': True,
-                    'message': f'已更新 modules/{safe}/ ({len(extracted)} 个文件)',
-                    'path': f'modules/{safe}', 'files': len(extracted)}
+            log.info(f'模块 {safe} 安装完成: {len(extracted)} 个文件')
+            return {
+                'success': True,
+                'message': f'已更新 modules/{safe}/ ({len(extracted)} 个文件)',
+                'path': f'modules/{safe}',
+                'files': len(extracted),
+            }
     except Exception as e:
         return {'success': False, 'message': str(e)}
 
@@ -271,13 +296,12 @@ async def handle_market_install(request: web.Request):
     try:
         # 模块安装: 从仓库 zip 中提取 modules/<name>/ 子目录
         if item_type == 'module':
-            return web.json_response(
-                await _install_module(github_url, item_name, branch, mirror=mirror))
+            return web.json_response(await _install_module(github_url, item_name, branch, mirror=mirror))
 
         # 插件安装: 有 path → 从仓库下载单个文件
         if file_path:
             url = _repo_raw_url(github_url, file_path, branch)
-            log.info(f"插件安装 (单文件): {item_name} ← {url}")
+            log.info(f'插件安装 (单文件): {item_name} ← {url}')
             content = await _download_file(url, mirror=mirror)
             if content is None:
                 return web.json_response({'success': False, 'message': '文件下载失败, 请检查路径或网络'})
@@ -287,7 +311,7 @@ async def handle_market_install(request: web.Request):
         is_repo = bool(re.match(r'https?://github\.com/[^/]+/[^/]+/?$', github_url.rstrip('/')))
         if is_repo:
             url = _github_to_archive(github_url, branch)
-            log.info(f"插件安装 (仓库): {item_name} ← {url}")
+            log.info(f'插件安装 (仓库): {item_name} ← {url}')
         else:
             url = _convert_github_url(github_url)
 
@@ -303,11 +327,12 @@ async def handle_market_install(request: web.Request):
             return web.json_response(_install_py(content, item_name, url))
         return web.json_response({'success': False, 'message': '不支持的文件类型'})
     except Exception as e:
-        log.error(f"安装失败 [{item_name}]: {e}")
+        log.error(f'安装失败 [{item_name}]: {e}')
         return web.json_response({'success': False, 'message': str(e)})
 
 
 # ==================== 卸载 ====================
+
 
 async def handle_market_uninstall(request: web.Request):
     """卸载已安装的插件/模块"""
@@ -334,9 +359,10 @@ async def handle_market_uninstall(request: web.Request):
         return web.json_response({'success': False, 'message': f'{label} 不存在'})
 
     import shutil
+
     try:
         shutil.rmtree(dest_dir)
-        log.info(f"{label} 已卸载")
+        log.info(f'{label} 已卸载')
         return web.json_response({'success': True, 'message': f'已卸载 {label}'})
     except Exception as e:
         return web.json_response({'success': False, 'message': f'删除失败: {e}'})

@@ -2,8 +2,8 @@
 
 import os
 import re
-import yaml
 
+import yaml
 from aiohttp import web
 
 _base_dir = ''
@@ -20,15 +20,22 @@ def _config_dir():
 
 # ===== YAML 序列化工具 =====
 
+
 def _yaml_scalar(v):
     """标量值序列化"""
-    if v is None: return 'null'
-    if isinstance(v, bool): return 'true' if v else 'false'
-    if isinstance(v, (int, float)): return str(v)
-    if not isinstance(v, str): return str(v)
-    if not v: return "''"
-    if v == '|': return "'|'"
-    needs_quote = any(c in v for c in ':#[]{}|>&*!?,\'\"') or v[0] in (' ', '-') or v[-1] == ' '
+    if v is None:
+        return 'null'
+    if isinstance(v, bool):
+        return 'true' if v else 'false'
+    if isinstance(v, int | float):
+        return str(v)
+    if not isinstance(v, str):
+        return str(v)
+    if not v:
+        return "''"
+    if v == '|':
+        return "'|'"
+    needs_quote = any(c in v for c in ':#[]{}|>&*!?,\'"') or v[0] in (' ', '-') or v[-1] == ' '
     return f'"{v}"' if needs_quote else v
 
 
@@ -181,14 +188,20 @@ def _merge_preserving_comments(original_text: str, new_data: dict) -> str:
 
 # ===== 路由处理 =====
 
+
 async def handle_get_config(request: web.Request):
+    """返回配置文件的原始内容（含环境变量占位符已解析）"""
+    from core.base.config import cfg
+
     cdir = _config_dir()
     result = {}
     for name in ('bot', 'settings', 'templates'):
         path = os.path.join(cdir, f'{name}.yaml')
         if os.path.exists(path):
-            with open(path, 'r', encoding='utf-8') as f:
-                result[name] = f.read()
+            with open(path, encoding='utf-8') as f:
+                raw_text = f.read()
+            # 解析 ${VAR_NAME:default} 环境变量占位符，避免前端显示原始占位符
+            result[name] = cfg._resolve_env_vars(raw_text)
         else:
             result[name] = ''
     return web.json_response({'success': True, **result})
@@ -210,7 +223,7 @@ async def handle_save_config(request: web.Request):
         # 备份
         if os.path.exists(path):
             bak = path + '.bak'
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(path, encoding='utf-8') as f:
                 original_text = f.read()
             with open(bak, 'w', encoding='utf-8') as fb:
                 fb.write(original_text)

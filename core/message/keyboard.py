@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """按钮 / 键盘构建辅助"""
 
 from core.base.config import cfg
@@ -7,26 +6,34 @@ from core.base.config import cfg
 
 def build_keyboard(button_rows, appid=None):
     """按钮行列表 → QQ InlineKeyboard 结构"""
-    button_enter_to_send = (
-        cfg.get_bot_setting(appid, 'message.button_enter_to_send', False)
-        if appid else False)
+    button_enter_to_send = cfg.get_bot_setting(appid, 'message.button_enter_to_send', False) if appid else False
 
     rows = []
     for row in button_rows:
         buttons = []
+        if isinstance(row, dict):
+            row = row.get('buttons') or row.get('btns') or []
         for btn in row:
+            r_data = btn.get('render_data') or {}
+            action = btn.get('action') or {}
             b = {
-                'id': str(len(buttons)),
-                'render_data': {
-                    'label': btn.get('text', ''),
-                    'visited_label': btn.get('show', btn.get('text', '')),
-                    'style': btn.get('style', 1),
-                },
-                'action': {
-                    'type': btn.get('type', 2),
-                    'data': btn.get('data', ''),
-                },
+                'id': btn.get('id') or str(len(buttons)),
+                'render_data': r_data,
+                'action': action,
             }
+            # 自定义字段覆盖
+            if text := btn.get('text'):
+                r_data['label'] = text
+                r_data['visited_label'] = r_data.get('visited_label') or text
+            if show := btn.get('show'):
+                r_data['visited_label'] = show
+            if style := btn.get('style'):
+                r_data['style'] = style
+            if type := btn.get('type'):
+                action['type'] = type
+            if data := btn.get('data'):
+                action['data'] = data
+
             # link 优先 (覆盖 type/data)
             if 'link' in btn:
                 b['action']['type'] = 0
@@ -47,11 +54,9 @@ def build_keyboard(button_rows, appid=None):
             if 'permission' in btn:
                 b['action']['permission'] = btn['permission']
             elif 'role' in btn:
-                b['action']['permission'] = {
-                    'type': 3, 'specify_role_ids': btn['role']}
+                b['action']['permission'] = {'type': 3, 'specify_role_ids': btn['role']}
             elif 'list' in btn:
-                b['action']['permission'] = {
-                    'type': 0, 'specify_user_ids': btn['list']}
+                b['action']['permission'] = {'type': 0, 'specify_user_ids': btn['list']}
             elif btn.get('admin'):
                 b['action']['permission'] = {'type': 1}
             else:
@@ -76,24 +81,32 @@ def build_prompt_keyboard(prompt_buttons):
         return None
     if isinstance(prompt_buttons, dict):
         return {'keyboard': prompt_buttons}
-    items = [prompt_buttons] if not isinstance(prompt_buttons, (list, tuple)) else list(prompt_buttons)
+    items = [prompt_buttons] if not isinstance(prompt_buttons, list | tuple) else list(prompt_buttons)
     action = {'type': 2, 'data': 'elaina', 'enter': True}
     buttons = []
     for i, btn in enumerate(items[:3]):
         if isinstance(btn, str):
-            buttons.append({
-                'id': str(i + 1),
-                'render_data': {'label': btn, 'visited_label': btn, 'style': 1},
-                'action': action,
-            })
-        elif isinstance(btn, (list, tuple)):
+            buttons.append(
+                {
+                    'id': str(i + 1),
+                    'render_data': {'label': btn, 'visited_label': btn, 'style': 1},
+                    'action': action,
+                }
+            )
+        elif isinstance(btn, list | tuple):
             label = btn[0] if btn else ''
             style = btn[1] if len(btn) > 1 else 1
-            buttons.append({
-                'id': str(i + 1),
-                'render_data': {'label': label, 'visited_label': label, 'style': style},
-                'action': action,
-            })
+            buttons.append(
+                {
+                    'id': str(i + 1),
+                    'render_data': {
+                        'label': label,
+                        'visited_label': label,
+                        'style': style,
+                    },
+                    'action': action,
+                }
+            )
         elif isinstance(btn, dict):
             btn.setdefault('id', str(i + 1))
             btn.setdefault('action', action)
@@ -104,7 +117,15 @@ def build_prompt_keyboard(prompt_buttons):
 
 
 _ARK_KEYS = {
-    24: ('#DESC#', '#PROMPT#', '#TITLE#', '#METADESC#', '#IMG#', '#LINK#', '#SUBTITLE#'),
+    24: (
+        '#DESC#',
+        '#PROMPT#',
+        '#TITLE#',
+        '#METADESC#',
+        '#IMG#',
+        '#LINK#',
+        '#SUBTITLE#',
+    ),
     37: ('#PROMPT#', '#METATITLE#', '#METASUBTITLE#', '#METACOVER#', '#METAURL#'),
 }
 
@@ -113,8 +134,7 @@ def convert_simple_ark_data(template_id, simple_data):
     """简化 ARK 数据 -> 完整 kv 格式 (template_id 23/24/37)"""
     keys = _ARK_KEYS.get(template_id)
     if keys:
-        return [{'key': keys[i], 'value': str(v)}
-                for i, v in enumerate(simple_data) if i < len(keys) and v is not None]
+        return [{'key': keys[i], 'value': str(v)} for i, v in enumerate(simple_data) if i < len(keys) and v is not None]
     if template_id == 23:
         return _build_ark23(simple_data)
     return simple_data

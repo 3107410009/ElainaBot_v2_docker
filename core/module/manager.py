@@ -1,21 +1,20 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """拓展模块管理器 — 自动发现、依赖安装、启停管理"""
 
-import os
-import sys
 import ast
-import json
 import asyncio
 import importlib
 import importlib.util
-from core.base.logger import get_logger, EXTENSION, report_error
-from core.base.config import cfg as app_cfg
+import json
+import os
+import sys
+
 from core.base.context import BaseContext
+from core.base.logger import EXTENSION, get_logger, report_error
 from core.base.pip_helper import install_requirements as _install_deps
 from core.module.hook import get_hook_manager
 
-log = get_logger(EXTENSION, "管理器")
+log = get_logger(EXTENSION, '管理器')
 
 
 async def _await_if_coro(result):
@@ -39,9 +38,9 @@ class ModuleContext(BaseContext):
 
     __slots__ = ('_hooks',)
 
-    def __init__(self, name, module_dir):
+    def __init__(self, name, module_dir, hook_manager):
         super().__init__(name, module_dir, EXTENSION)
-        self._hooks = get_hook_manager()
+        self._hooks = hook_manager
 
     @property
     def module_dir(self):
@@ -51,9 +50,11 @@ class ModuleContext(BaseContext):
 
     def hook(self, hook_name, *, priority=100):
         """装饰器注册 hook: @ctx.hook('before_send')"""
+
         def decorator(func):
             self._hooks.register(hook_name, func, owner=self.name, priority=priority)
             return func
+
         return decorator
 
     def register_hook(self, hook_name, callback, *, priority=100):
@@ -71,9 +72,21 @@ class ModuleContext(BaseContext):
 
 class ModuleInfo:
     """已发现模块的信息"""
-    __slots__ = ('name', 'display_name', 'description', 'module_dir',
-                 'module', 'version', 'author', 'github', 'releases',
-                 'instance', 'ctx', 'error')
+
+    __slots__ = (
+        'name',
+        'display_name',
+        'description',
+        'module_dir',
+        'module',
+        'version',
+        'author',
+        'github',
+        'releases',
+        'instance',
+        'ctx',
+        'error',
+    )
 
     def __init__(self, name, module_dir):
         self.name = name
@@ -93,12 +106,13 @@ class ModuleInfo:
 class ModuleManager:
     """拓展模块管理器"""
 
-    def __init__(self, modules_dir=None):
+    def __init__(self, modules_dir=None, hook_manager=None):
         if modules_dir:
             self._dir = os.path.abspath(modules_dir)
         else:
             self._dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'modules')
-        self._modules = {}    # {name: ModuleInfo}
+        self._hook_manager = hook_manager or get_hook_manager()
+        self._modules = {}  # {name: ModuleInfo}
         self._lock = asyncio.Lock()
         self._enabled_file = os.path.join(self._dir, 'modules_enabled.json')
         self._enabled_map = self._load_enabled_map()  # {name: bool}
@@ -124,8 +138,7 @@ class ModuleManager:
                 if val is not None:
                     setattr(info, key, str(val))
             self._modules[name] = info
-        log.info(f"发现 {len(self._modules)} 个模块: "
-                 f"{', '.join(f'{n}@{m.version}' for n, m in self._modules.items())}")
+        log.info(f'发现 {len(self._modules)} 个模块: {", ".join(f"{n}@{m.version}" for n, m in self._modules.items())}')
 
     # ==================== 持久化开关 ====================
 
@@ -134,7 +147,7 @@ class ModuleManager:
         if not os.path.isfile(self._enabled_file):
             return {}
         try:
-            with open(self._enabled_file, 'r', encoding='utf-8') as f:
+            with open(self._enabled_file, encoding='utf-8') as f:
                 data = json.load(f)
             return data if isinstance(data, dict) else {}
         except Exception:
@@ -147,7 +160,7 @@ class ModuleManager:
             with open(self._enabled_file, 'w', encoding='utf-8') as f:
                 json.dump(self._enabled_map, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            log.warning(f"保存模块开关状态失败: {e}")
+            log.warning(f'保存模块开关状态失败: {e}')
 
     def is_module_enabled_persist(self, name):
         """查询模块是否在持久化配置中标记为启用 (默认 False)"""
@@ -164,10 +177,9 @@ class ModuleManager:
         """启动持久化配置中标记为启用的模块"""
         to_start = [n for n in self._modules if self.is_module_enabled_persist(n)]
         if not to_start:
-            log.info("无已启用模块, 跳过启动")
+            log.info('无已启用模块, 跳过启动')
             return
-        tasks = [_install_deps(n, self._modules[n].module_dir, skip_if_met=True, no_cache=True)
-                 for n in to_start]
+        tasks = [_install_deps(n, self._modules[n].module_dir, skip_if_met=True, no_cache=True) for n in to_start]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         for name in to_start:
@@ -183,14 +195,14 @@ class ModuleManager:
         async with self._lock:
             info = self._modules.get(name)
             if not info:
-                log.warning(f"模块不存在: {name}")
+                log.warning(f'模块不存在: {name}')
                 return False
             if info.instance is not None:
                 return True
             try:
                 if not _skip_deps:
                     await _install_deps(name, info.module_dir, skip_if_met=True, no_cache=True)
-                ctx = ModuleContext(info.display_name or name, info.module_dir)
+                ctx = ModuleContext(info.display_name or name, info.module_dir, self._hook_manager)
                 info.ctx = ctx
                 module = self._import_module(name, info.module_dir)
                 info.module = module
@@ -221,12 +233,12 @@ class ModuleManager:
                     await _await_if_coro(teardown_fn())
             except Exception as e:
                 report_error(EXTENSION, name, e)
-            get_hook_manager().unregister_owner(info.display_name or name)
+            self._hook_manager.unregister_owner(info.display_name or name)
             info.instance = info.ctx = None
-            sys.modules.pop(f"modules.{name}", None)
+            sys.modules.pop(f'modules.{name}', None)
             if _persist:
                 self.set_module_enabled_persist(name, False)
-            get_logger(EXTENSION, info.display_name).info("❌ 已禁用")
+            get_logger(EXTENSION, info.display_name).info('❌ 已禁用')
             return True
 
     async def reload(self, name):
@@ -262,13 +274,21 @@ class ModuleManager:
 
     def list_modules(self):
         """获取所有模块状态"""
-        return [{'name': i.name, 'display_name': i.display_name,
-                 'description': i.description, 'version': i.version,
-                 'author': i.author, 'github': i.github, 'releases': i.releases,
-                 'enabled': i.instance is not None,
-                 'persist_enabled': self.is_module_enabled_persist(i.name),
-                 'error': i.error}
-                for i in self._modules.values()]
+        return [
+            {
+                'name': i.name,
+                'display_name': i.display_name,
+                'description': i.description,
+                'version': i.version,
+                'author': i.author,
+                'github': i.github,
+                'releases': i.releases,
+                'enabled': i.instance is not None,
+                'persist_enabled': self.is_module_enabled_persist(i.name),
+                'error': i.error,
+            }
+            for i in self._modules.values()
+        ]
 
     # ==================== 内部 ====================
 
@@ -283,11 +303,10 @@ class ModuleManager:
         """动态导入模块"""
         entry = os.path.join(mod_dir, 'main.py')
         if not os.path.isfile(entry):
-            raise FileNotFoundError(f"模块入口不存在: {mod_dir} (需要 main.py)")
+            raise FileNotFoundError(f'模块入口不存在: {mod_dir} (需要 main.py)')
 
-        mod_name = f"modules.{name}"
-        spec = importlib.util.spec_from_file_location(mod_name, entry,
-                    submodule_search_locations=[mod_dir])
+        mod_name = f'modules.{name}'
+        spec = importlib.util.spec_from_file_location(mod_name, entry, submodule_search_locations=[mod_dir])
         module = importlib.util.module_from_spec(spec)
         sys.modules[mod_name] = module
         spec.loader.exec_module(module)
@@ -300,18 +319,21 @@ class ModuleManager:
         if not os.path.isfile(entry):
             return dict(_DEFAULT_MANIFEST)
         try:
-            with open(entry, 'r', encoding='utf-8') as f:
+            with open(entry, encoding='utf-8') as f:
                 tree = ast.parse(f.read())
             for node in ast.iter_child_nodes(tree):
-                if (isinstance(node, ast.Assign) and len(node.targets) == 1
-                        and isinstance(node.targets[0], ast.Name)
-                        and node.targets[0].id == '__module_meta__'):
+                if (
+                    isinstance(node, ast.Assign)
+                    and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and node.targets[0].id == '__module_meta__'
+                ):
                     return ast.literal_eval(node.value)
         except Exception as e:
-            log.warning(f"读取模块元数据失败 [{mod_dir}]: {e}")
+            log.warning(f'读取模块元数据失败 [{mod_dir}]: {e}')
         return dict(_DEFAULT_MANIFEST)
 
     async def shutdown(self):
-        """关闭所有已启用模块"""
+        """关闭所有已启用模块 (不改变持久化状态, 重启后按用户设置恢复)"""
         for name in [n for n, i in self._modules.items() if i.instance is not None]:
-            await self.disable(name)
+            await self.disable(name, _persist=False)

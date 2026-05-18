@@ -4,8 +4,6 @@ import time
 
 _nickname_cache = {}
 _CACHE_TIMEOUT = 86400
-_NICKNAME_CACHE_MAX = 5000
-_nickname_last_purge = 0.0
 _base_dir = ''
 _bot_manager = None
 
@@ -16,25 +14,9 @@ def set_context(base_dir: str, bot_manager=None):
     _bot_manager = bot_manager
 
 
-def _purge_nickname_cache():
-    global _nickname_last_purge
-    now = time.time()
-    if now - _nickname_last_purge < 600:
-        return
-    _nickname_last_purge = now
-    expired = [k for k, v in _nickname_cache.items() if now - v['ts'] >= _CACHE_TIMEOUT]
-    for k in expired:
-        del _nickname_cache[k]
-    if len(_nickname_cache) > _NICKNAME_CACHE_MAX:
-        by_ts = sorted(_nickname_cache, key=lambda k: _nickname_cache[k]['ts'])
-        for k in by_ts[:len(by_ts) // 2]:
-            del _nickname_cache[k]
-
-
 def _get_nickname(user_id):
     if not user_id:
-        return "未知用户"
-    _purge_nickname_cache()
+        return '未知用户'
     cached = _nickname_cache.get(user_id)
     if cached and time.time() - cached['ts'] < _CACHE_TIMEOUT:
         return cached['name']
@@ -42,15 +24,14 @@ def _get_nickname(user_id):
     if _bot_manager:
         for inst in _bot_manager._bots.values():
             try:
-                r = inst.log_service.query_data(
-                    "SELECT name FROM users WHERE user_id=?", (user_id,))
+                r = inst.log_service.query_data('SELECT name FROM users WHERE user_id=?', (user_id,))
                 if r and r[0].get('name'):
                     name = r[0]['name']
                     _nickname_cache[user_id] = {'name': name, 'ts': time.time()}
                     return name
             except Exception:
                 pass
-    return f"用户{user_id[-6:]}"
+    return f'用户{user_id[-6:]}'
 
 
 def _batch_get_nicknames(user_ids):
@@ -71,9 +52,9 @@ def _batch_get_nicknames(user_ids):
     if pending and _bot_manager:
         # SQLite 占位符限制, 分批 (1万/次 足够)
         for chunk_start in range(0, len(pending), 500):
-            chunk = pending[chunk_start:chunk_start + 500]
+            chunk = pending[chunk_start : chunk_start + 500]
             placeholders = ','.join('?' * len(chunk))
-            sql = f"SELECT user_id, name FROM users WHERE user_id IN ({placeholders})"
+            sql = f'SELECT user_id, name FROM users WHERE user_id IN ({placeholders})'
             for inst in _bot_manager._bots.values():
                 try:
                     rows = inst.log_service.query_data(sql, tuple(chunk))
@@ -88,7 +69,7 @@ def _batch_get_nicknames(user_ids):
     # fallback for missing
     for uid in user_ids:
         if uid and uid not in out:
-            out[uid] = f"用户{uid[-6:]}"
+            out[uid] = f'用户{uid[-6:]}'
     return out
 
 

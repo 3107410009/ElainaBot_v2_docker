@@ -1,12 +1,12 @@
 """Web 面板集成入口"""
 
-import os
 import logging
+import os
 
 from aiohttp import web
 
-import web.auth as _auth
 import web.api as _panel_api
+import web.auth as _auth
 
 log = logging.getLogger('ElainaBot.web')
 
@@ -21,7 +21,9 @@ class _WebPanelLogHandler(logging.Handler):
     def emit(self, record):
         try:
             from datetime import datetime
+
             from core.storage.log import SharedLogService
+
             msg = record.getMessage()
             level = record.levelname
             entry = {
@@ -58,15 +60,19 @@ def setup_web(app: web.Application, bot_manager, base_dir: str):
                 _inst.sender._bot_qq = getattr(_inst, 'robot_qq', '')
 
         def _push_error(error_data):
-            _ws.push_log('error', {
-                'timestamp': error_data.get('timestamp', ''),
-                'appid': error_data.get('appid', '0000'),
-                'module_type': error_data.get('module_type', ''),
-                'module_name': error_data.get('module_name', ''),
-                'content': error_data.get('content', ''),
-                'traceback': error_data.get('traceback', ''),
-                'context': error_data.get('context', {}),
-            })
+            _ws.push_log(
+                'error',
+                {
+                    'timestamp': error_data.get('timestamp', ''),
+                    'appid': error_data.get('appid', '0000'),
+                    'module_type': error_data.get('module_type', ''),
+                    'module_name': error_data.get('module_name', ''),
+                    'content': error_data.get('content', ''),
+                    'traceback': error_data.get('traceback', ''),
+                    'context': error_data.get('context', {}),
+                },
+            )
+
         on_error(_push_error)
 
         _handler = _WebPanelLogHandler(_ws)
@@ -93,15 +99,21 @@ def setup_web(app: web.Application, bot_manager, base_dir: str):
 
     if os.path.isdir(dist_dir):
         app.router.add_get('/web/{path:.*}', _make_spa_handler(dist_dir))
-        log.info(f"Web 面板已挂载 (dist: {dist_dir})")
+        log.info(f'Web 面板已挂载 (dist: {dist_dir})')
     else:
         app.router.add_get('/web/{path:.*}', _dev_placeholder)
-        log.warning(f"Web 面板未找到编译产物 (期望路径: {dist_dir})")
+        log.warning(f'Web 面板未找到编译产物 (期望路径: {dist_dir})')
 
 
-_MIME = {'.js': 'application/javascript', '.css': 'text/css',
-         '.html': 'text/html', '.json': 'application/json',
-         '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon'}
+_MIME = {
+    '.js': 'application/javascript',
+    '.css': 'text/css',
+    '.html': 'text/html',
+    '.json': 'application/json',
+    '.svg': 'image/svg+xml',
+    '.png': 'image/png',
+    '.ico': 'image/x-icon',
+}
 
 
 def _make_spa_handler(dist_dir: str):

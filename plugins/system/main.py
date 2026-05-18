@@ -10,23 +10,25 @@ __plugin_meta__ = {
     'github': 'https://github.com/ElainaCore/ElainaBot_v2',
 }
 
+from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import on_load, on_unload
-from core.base.logger import get_logger, PLUGIN
 
 # 导入 app 子模块, 触发 @handler / 侧边栏页面等注册
-from plugins.system.app import basic      # noqa: F401
-from plugins.system.app import admin      # noqa: F401
-from plugins.system.app import stats      # noqa: F401
-from plugins.system.app import openapi    # noqa: F401
+from plugins.system.app import (
+    admin,  # noqa: F401
+    basic,  # noqa: F401
+    openapi,  # noqa: F401
+    stats,  # noqa: F401
+)
 
-log = get_logger(PLUGIN, "系统管理")
+log = get_logger(PLUGIN, '系统管理')
 
 
 @on_load
 def _on_load():
-    log.info("✅ 系统管理插件已加载")
+    log.info('✅ 系统管理插件已加载')
 
 
 @on_unload
 def _on_unload():
-    log.info("系统管理插件已卸载")
+    log.info('系统管理插件已卸载')

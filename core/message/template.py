@@ -1,11 +1,12 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """模板引擎 — 消息模板 + 按钮构建, 热加载"""
 
-from core.base.config import cfg
-from core.base.logger import get_logger, FRAMEWORK
+import contextlib
 
-log = get_logger(FRAMEWORK, "模板引擎")
+from core.base.config import cfg
+from core.base.logger import FRAMEWORK, get_logger
+
+log = get_logger(FRAMEWORK, '模板引擎')
 
 
 class TemplateEngine:
@@ -17,7 +18,7 @@ class TemplateEngine:
             variables.setdefault('appid', appid)
         raw = self._resolve_template(template_name, appid)
         if raw is None:
-            return f"[模板缺失: {template_name}]", None
+            return f'[模板缺失: {template_name}]', None
 
         # 纯字符串模板
         if isinstance(raw, str):
@@ -113,10 +114,8 @@ def _build_single_button(btn, variables):
     """构建单个按钮 dict (符合 QQ 平台 InlineKeyboard 格式)"""
     text = btn.get('text', '')
     if variables:
-        try:
+        with contextlib.suppress(Exception):
             text = text.format_map(_SafeDict(variables))
-        except Exception:
-            pass
 
     result = {'text': text}
 
@@ -128,10 +127,8 @@ def _build_single_button(btn, variables):
         result['type'] = btn.get('type', 2)
         data = btn.get('data', text)
         if variables:
-            try:
+            with contextlib.suppress(Exception):
                 data = data.format_map(_SafeDict(variables))
-            except Exception:
-                pass
         result['data'] = data
 
     # 可选属性
@@ -151,6 +148,7 @@ def _build_single_button(btn, variables):
 
 class _SafeDict(dict):
     """format_map 安全字典: 缺失的 key 保留原样 {key}"""
+
     def __missing__(self, key):
         return f'{{{key}}}'
 

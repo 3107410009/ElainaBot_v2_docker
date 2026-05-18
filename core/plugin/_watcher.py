@@ -1,11 +1,12 @@
 """文件监视 (代码变更自动热重载) — PluginManager 的 Mixin"""
 
-import os
 import asyncio
+import contextlib
+import os
 
-from core.base.logger import get_logger, FRAMEWORK, PLUGIN, report_error
+from core.base.logger import FRAMEWORK, PLUGIN, get_logger, report_error
 
-log = get_logger(FRAMEWORK, "插件管理")
+log = get_logger(FRAMEWORK, '插件管理')
 
 
 class _WatcherMixin:
@@ -16,10 +17,8 @@ class _WatcherMixin:
             for f in files:
                 if f.endswith('.py') and not f.startswith('_'):
                     fp = os.path.join(root, f)
-                    try:
+                    with contextlib.suppress(OSError):
                         self._file_mtimes[fp] = os.path.getmtime(fp)
-                    except OSError:
-                        pass
 
     def _snapshot_all_mtimes(self):
         self._file_mtimes.clear()
@@ -46,9 +45,8 @@ class _WatcherMixin:
                 continue
             for root, _, files in os.walk(pdir):
                 for f in files:
-                    if f.endswith('.py') and not f.startswith('_'):
-                        if os.path.join(root, f) not in self._file_mtimes:
-                            changed.add(name)
+                    if f.endswith('.py') and not f.startswith('_') and os.path.join(root, f) not in self._file_mtimes:
+                        changed.add(name)
         return changed
 
     async def _watcher_loop(self):
@@ -73,7 +71,7 @@ class _WatcherMixin:
             return
         self._watcher_running = True
         self._watcher_task = asyncio.ensure_future(self._watcher_loop())
-        log.info("📡 插件文件监视已启动")
+        log.info('📡 插件文件监视已启动')
 
     def stop_watcher(self):
         self._watcher_running = False

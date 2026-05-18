@@ -1,19 +1,19 @@
 """框架更新 — 常量, GitHub URL, 镜像列表, 缓存读写"""
 
-import os
 import json
 import logging
+import os
 
 log = logging.getLogger('ElainaBot.web.updater')
 
-GITHUB_REPO = "ElainaCore/ElainaBot_v2"
-GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}"
-GITHUB_DOWNLOAD_URL = f"https://github.com/{GITHUB_REPO}/archive/main.zip"
-GITHUB_SHA_URL = f"https://codeload.github.com/{GITHUB_REPO}/zip/{{version}}"
+GITHUB_REPO = 'ElainaCore/ElainaBot_v2'
+GITHUB_API_URL = f'https://api.github.com/repos/{GITHUB_REPO}'
+GITHUB_DOWNLOAD_URL = f'https://github.com/{GITHUB_REPO}/archive/main.zip'
+GITHUB_SHA_URL = f'https://codeload.github.com/{GITHUB_REPO}/zip/{{version}}'
 
 # GitHub API 代理 (能代理 api.github.com 请求)
 GITHUB_API_MIRRORS = [
-    f'https://api.github.com/repos/{GITHUB_REPO}',           # 直连
+    f'https://api.github.com/repos/{GITHUB_REPO}',  # 直连
     f'https://ghproxy.cc/https://api.github.com/repos/{GITHUB_REPO}',
     f'https://gh-proxy.com/https://api.github.com/repos/{GITHUB_REPO}',
     f'https://ghproxy.net/https://api.github.com/repos/{GITHUB_REPO}',
@@ -73,7 +73,11 @@ GITHUB_FILE_MIRRORS = [
 
 
 def _mirror_cache_path():
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', 'mirror_cache.json')
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        'data',
+        'mirror_cache.json',
+    )
 
 
 def _save_mirror_cache(mirrors):
@@ -92,7 +96,7 @@ def _load_mirror_cache():
         path = _mirror_cache_path()
         if not os.path.isfile(path):
             return []
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             return json.load(f).get('mirrors', [])
     except Exception:
         return []

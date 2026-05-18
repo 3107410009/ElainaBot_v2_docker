@@ -1,11 +1,11 @@
 """机器人重启"""
 
 import os
-import sys
-import time
 import platform
 import subprocess
+import sys
 import threading
+import time
 
 from aiohttp import web
 
@@ -18,7 +18,7 @@ def set_context(base_dir: str):
     _base_dir = base_dir
 
 
-_WIN_TEMPLATE = '''import os, sys, time, subprocess
+_WIN_TEMPLATE = """import os, sys, time, subprocess
 def main():
     time.sleep(3)
     main_path = r"{main_py}"
@@ -31,9 +31,9 @@ def main():
     sys.exit(0)
 if __name__ == "__main__":
     main()
-'''
+"""
 
-_UNIX_TEMPLATE = '''import os, sys, time, psutil
+_UNIX_TEMPLATE = """import os, sys, time, psutil
 def main():
     main_path = r"{main_py}"
     port = {port}
@@ -53,7 +53,7 @@ def main():
     os.execv(sys.executable, [sys.executable, main_path])
 if __name__ == "__main__":
     main()
-'''
+"""
 
 
 async def handle_restart(request: web.Request):
@@ -62,6 +62,7 @@ async def handle_restart(request: web.Request):
         return web.json_response({'success': False, 'error': 'main.py 不存在'})
 
     from core.base.config import cfg
+
     port = cfg.get('settings', 'server.port', 5001)
     restarter = os.path.join(_base_dir, 'bot_restarter.py')
 
@@ -75,8 +76,11 @@ async def handle_restart(request: web.Request):
             f.write(script)
 
         if _IS_WINDOWS:
-            subprocess.Popen([sys.executable, restarter], cwd=_base_dir,
-                             creationflags=subprocess.CREATE_NEW_CONSOLE)
+            subprocess.Popen(
+                [sys.executable, restarter],
+                cwd=_base_dir,
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+            )
             threading.Thread(target=lambda: (time.sleep(1), os._exit(0)), daemon=True).start()
         else:
             subprocess.Popen([sys.executable, restarter], cwd=_base_dir, start_new_session=True)

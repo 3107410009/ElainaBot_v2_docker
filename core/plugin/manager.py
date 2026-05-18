@@ -1,16 +1,16 @@
 """插件管理器 — 加载/卸载/分发/热重载"""
 
-import os
 import asyncio
+import os
 from collections import OrderedDict
 
-from core.base.logger import get_logger, FRAMEWORK
+from core.base.logger import FRAMEWORK, get_logger
+from core.plugin._blacklist import _BlacklistMixin
+from core.plugin._dispatch import _DispatchMixin
 from core.plugin._loader import _LoaderMixin
 from core.plugin._watcher import _WatcherMixin
-from core.plugin._dispatch import _DispatchMixin
-from core.plugin._blacklist import _BlacklistMixin
 
-log = get_logger(FRAMEWORK, "插件管理")
+log = get_logger(FRAMEWORK, '插件管理')
 
 
 class PluginManager(_LoaderMixin, _WatcherMixin, _DispatchMixin, _BlacklistMixin):
@@ -83,26 +83,45 @@ class PluginManager(_LoaderMixin, _WatcherMixin, _DispatchMixin, _BlacklistMixin
         return False
 
     def get_plugin_list(self):
-        return [{'name': p.name, 'enabled': p.enabled,
-                 'handlers': [h['name'] for h in p.handlers],
-                 'handler_count': len(p.handlers),
-                 'load_time': round(p.load_time, 3),
-                 'error': p.error, 'is_large': p.is_large}
-                for p in self._plugins.values()]
+        return [
+            {
+                'name': p.name,
+                'enabled': p.enabled,
+                'handlers': [h['name'] for h in p.handlers],
+                'handler_count': len(p.handlers),
+                'load_time': round(p.load_time, 3),
+                'error': p.error,
+                'is_large': p.is_large,
+            }
+            for p in self._plugins.values()
+        ]
 
     def get_command_list(self):
-        return [{'name': h['name'], 'pattern': h['pattern'], 'desc': h['desc'],
-                 'plugin': h.get('_plugin', ''), 'owner_only': h['owner_only'],
-                 'priority': h['priority']}
-                for h in self._all_handlers]
+        return [
+            {
+                'name': h['name'],
+                'pattern': h['pattern'],
+                'desc': h['desc'],
+                'plugin': h.get('_plugin', ''),
+                'owner_only': h['owner_only'],
+                'priority': h['priority'],
+            }
+            for h in self._all_handlers
+        ]
 
     def get_web_plugin_info(self):
         result = {}
         for p in self._plugins.values():
-            cmds = [{'name': h.get('name', ''), 'pattern': h.get('pattern', ''),
-                     'desc': h.get('desc', ''), 'owner_only': h.get('owner_only', False),
-                     'group_only': h.get('group_only', False)}
-                    for h in p.handlers]
+            cmds = [
+                {
+                    'name': h.get('name', ''),
+                    'pattern': h.get('pattern', ''),
+                    'desc': h.get('desc', ''),
+                    'owner_only': h.get('owner_only', False),
+                    'group_only': h.get('group_only', False),
+                }
+                for h in p.handlers
+            ]
             desc = ''
             if p.module and getattr(p.module, '__doc__', None):
                 desc = p.module.__doc__.strip().split('\n')[0]
@@ -114,7 +133,7 @@ def _resolve_allowed_bots(pb, plugin_name, file_name):
     if not pb:
         return None
     if file_name:
-        bots = pb.get(f"{plugin_name}/{file_name}")
+        bots = pb.get(f'{plugin_name}/{file_name}')
         if bots is not None:
             return frozenset(bots) if bots else None
     if plugin_name:

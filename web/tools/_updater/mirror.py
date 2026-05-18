@@ -1,14 +1,16 @@
 """框架更新 — 镜像测速, 环境检测"""
 
+import asyncio
 import os
 import time
-import asyncio
 
 import aiohttp as _aiohttp
 
 from web.tools._updater.shared import (
-    GITHUB_FILE_MIRRORS, _build_mirror_url,
-    _load_mirror_cache, _save_mirror_cache, log,
+    GITHUB_FILE_MIRRORS,
+    _build_mirror_url,
+    _load_mirror_cache,
+    _save_mirror_cache,
 )
 
 _mirror_testing = None  # asyncio.Task (防重复测速)
@@ -19,18 +21,32 @@ async def _test_one_mirror(mirror, timeout=3):
     test_url = _build_mirror_url('https://github.com/lengxi-root/napcat-plugin-lengxi/releases/latest', mirror)
     start = time.time()
     try:
-        async with _aiohttp.ClientSession() as session:
-            async with session.head(test_url,
-                                    headers={'User-Agent': 'ElainaBot-Mirror-Test'},
-                                    timeout=_aiohttp.ClientTimeout(total=timeout),
-                                    allow_redirects=False,
-                                    ssl=False) as resp:
-                latency = time.time() - start
-                # 2xx/3xx 成功, 405(不支持HEAD但镜像本身可用)也算成功
-                ok = (200 <= resp.status < 400) or resp.status == 405
-                return {'mirror': mirror, 'latency': round(latency, 3), 'success': ok, 'status': resp.status}
+        async with (
+            _aiohttp.ClientSession() as session,
+            session.head(
+                test_url,
+                headers={'User-Agent': 'ElainaBot-Mirror-Test'},
+                timeout=_aiohttp.ClientTimeout(total=timeout),
+                allow_redirects=False,
+                ssl=False,
+            ) as resp,
+        ):
+            latency = time.time() - start
+            # 2xx/3xx 成功, 405(不支持HEAD但镜像本身可用)也算成功
+            ok = (200 <= resp.status < 400) or resp.status == 405
+            return {
+                'mirror': mirror,
+                'latency': round(latency, 3),
+                'success': ok,
+                'status': resp.status,
+            }
     except Exception as e:
-        return {'mirror': mirror, 'latency': round(time.time() - start, 3), 'success': False, 'error': type(e).__name__}
+        return {
+            'mirror': mirror,
+            'latency': round(time.time() - start, 3),
+            'success': False,
+            'error': type(e).__name__,
+        }
 
 
 async def test_all_mirrors(timeout=3):
@@ -62,6 +78,7 @@ async def get_fast_mirrors(force=False):
 
 # ==================== 环境检测 ====================
 
+
 def detect_environment():
     """检测运行环境, 返回 {docker, writable, warning}"""
     info = {'docker': False, 'writable': True, 'warnings': []}
@@ -70,15 +87,17 @@ def detect_environment():
         info['docker'] = True
     else:
         try:
-            with open('/proc/1/cgroup', 'r') as f:
+            with open('/proc/1/cgroup') as f:
                 if 'docker' in f.read() or 'containerd' in f.read():
                     info['docker'] = True
         except Exception:
             pass
     # 可写性检测
     try:
-        test_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.abspath(__file__)))), '.write_test')
+        test_file = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            '.write_test',
+        )
         with open(test_file, 'w') as f:
             f.write('test')
         os.remove(test_file)

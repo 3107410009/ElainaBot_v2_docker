@@ -19,11 +19,16 @@ async def handle_local_plugins(request: web.Request):
         if os.path.isdir(item_path):
             for f in os.listdir(item_path):
                 if f.endswith('.py') and not f.startswith('__'):
-                    plugins.append({'name': f'{item}/{f[:-3]}', 'type': 'file',
-                                    'files': [f], 'path': f'{item}/{f}'})
+                    plugins.append(
+                        {
+                            'name': f'{item}/{f[:-3]}',
+                            'type': 'file',
+                            'files': [f],
+                            'path': f'{item}/{f}',
+                        }
+                    )
         elif item.endswith('.py'):
-            plugins.append({'name': item[:-3], 'type': 'file',
-                            'files': [item], 'path': item})
+            plugins.append({'name': item[:-3], 'type': 'file', 'files': [item], 'path': item})
     return web.json_response({'success': True, 'plugins': plugins})
 
 
@@ -34,11 +39,22 @@ async def handle_local_plugin_read(request: web.Request):
         return web.json_response({'success': False, 'message': '无效路径'}, status=400)
     full = os.path.join(_plugins_dir(), path)
     if os.path.isfile(full) and full.endswith('.py'):
-        with open(full, 'r', encoding='utf-8') as f:
+        with open(full, encoding='utf-8') as f:
             content = f.read()
-        return web.json_response({'success': True, 'type': 'single',
-                                  'files': [{'name': os.path.basename(path), 'path': path,
-                                             'content': content, 'size': len(content)}]})
+        return web.json_response(
+            {
+                'success': True,
+                'type': 'single',
+                'files': [
+                    {
+                        'name': os.path.basename(path),
+                        'path': path,
+                        'content': content,
+                        'size': len(content),
+                    }
+                ],
+            }
+        )
     if os.path.isdir(full):
         files = []
         for root, dirs, fnames in os.walk(full):
@@ -49,11 +65,26 @@ async def handle_local_plugin_read(request: web.Request):
                 fp = os.path.join(root, fn)
                 rel = os.path.relpath(fp, _plugins_dir())
                 if fn.endswith('.py'):
-                    with open(fp, 'r', encoding='utf-8') as f:
+                    with open(fp, encoding='utf-8') as f:
                         c = f.read()
-                    files.append({'name': fn, 'path': rel, 'content': c, 'size': len(c), 'editable': True})
+                    files.append(
+                        {
+                            'name': fn,
+                            'path': rel,
+                            'content': c,
+                            'size': len(c),
+                            'editable': True,
+                        }
+                    )
                 else:
-                    files.append({'name': fn, 'path': rel, 'size': os.path.getsize(fp), 'editable': False})
+                    files.append(
+                        {
+                            'name': fn,
+                            'path': rel,
+                            'size': os.path.getsize(fp),
+                            'editable': False,
+                        }
+                    )
         return web.json_response({'success': True, 'type': 'folder', 'files': files})
     return web.json_response({'success': False, 'message': '不存在'}, status=404)
 
@@ -77,8 +108,11 @@ async def handle_local_plugin_save(request: web.Request):
             saved.append(fp)
         except Exception as e:
             errors.append(f'{fp}: {e}')
-    return web.json_response({
-        'success': bool(saved),
-        'message': f'已保存 {len(saved)} 个文件' + (f', {len(errors)} 个失败' if errors else ''),
-        'saved': saved, 'errors': errors,
-    })
+    return web.json_response(
+        {
+            'success': bool(saved),
+            'message': f'已保存 {len(saved)} 个文件' + (f', {len(errors)} 个失败' if errors else ''),
+            'saved': saved,
+            'errors': errors,
+        }
+    )

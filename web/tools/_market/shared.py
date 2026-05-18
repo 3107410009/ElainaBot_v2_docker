@@ -1,9 +1,9 @@
 """插件市场 — 全局状态, 镜像配置, URL/目录辅助"""
 
-import os
-import re
 import json
 import logging
+import os
+import re
 
 log = logging.getLogger('ElainaBot.web.market')
 
@@ -27,15 +27,20 @@ def set_context(base_dir: str, appid: str = '', robot_qq: str = ''):
 
 # ==================== 市场镜像偏好 ====================
 
+
 def _market_mirror_path():
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', 'market_mirror.json')
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        'data',
+        'market_mirror.json',
+    )
 
 
 def _load_market_mirror():
     try:
         p = _market_mirror_path()
         if os.path.isfile(p):
-            with open(p, 'r', encoding='utf-8') as f:
+            with open(p, encoding='utf-8') as f:
                 return json.load(f).get('mirror', '')
     except Exception:
         pass
@@ -62,9 +67,11 @@ def _modules_dir():
 
 # ==================== URL 辅助 ====================
 
+
 def _ranked_mirror_urls(raw_url):
     """按磁盘缓存排名生成 URL 列表, 缓存为空时用兜底镜像"""
-    from web.tools._updater.shared import _load_mirror_cache, _build_mirror_url
+    from web.tools._updater.shared import _build_mirror_url, _load_mirror_cache
+
     cached = _load_mirror_cache()
     if cached:
         urls = [_build_mirror_url(raw_url, m['mirror'] if isinstance(m, dict) else m) for m in cached]

@@ -1,12 +1,13 @@
 """HTTP 请求层 — Token 自动重试、API 基础方法"""
 
+import asyncio
 import json
 import time
-import asyncio
-from core.network.http_compat import AsyncHttpClient, HAS_HTTPX
-from core.base.logger import get_logger, FRAMEWORK
 
-log = get_logger(FRAMEWORK, "消息发送")
+from core.base.logger import FRAMEWORK, get_logger
+from core.network.http_compat import HAS_HTTPX, AsyncHttpClient
+
+log = get_logger(FRAMEWORK, '消息发送')
 
 # ==================== 常量 ====================
 
@@ -15,7 +16,17 @@ MSG_TYPE_MARKDOWN = 2
 MSG_TYPE_ARK = 3
 MSG_TYPE_MEDIA = 7
 
-_API_BASE = "https://api.sgroup.qq.com"
+
+class MessageType:
+    """消息类型枚举 (别名, 兼容 Enum 用法)"""
+
+    MSG_TYPE_TEXT = MSG_TYPE_TEXT
+    MSG_TYPE_MARKDOWN = MSG_TYPE_MARKDOWN
+    MSG_TYPE_ARK = MSG_TYPE_ARK
+    MSG_TYPE_MEDIA = MSG_TYPE_MEDIA
+
+
+_API_BASE = 'https://api.sgroup.qq.com'
 
 _IGNORE_ERROR_CODES = frozenset({11293, 40054002, 40054003})
 _TOKEN_EXPIRED_CODE = 11244
@@ -27,9 +38,8 @@ class _HttpMixin:
 
     async def _ensure_client(self):
         if self._client is None or self._client.is_closed:
-            self._client = AsyncHttpClient(
-                base_url=self._base_url, timeout=30.0)
-            log.info(f"[{self._appid}] HTTP客户端: {'httpx' if HAS_HTTPX else 'aiohttp'}")
+            self._client = AsyncHttpClient(base_url=self._base_url, timeout=30.0)
+            log.info(f'[{self._appid}] HTTP客户端初始化: {"httpx" if HAS_HTTPX else "aiohttp"}')
         return self._client
 
     async def close(self):
@@ -42,7 +52,7 @@ class _HttpMixin:
         for attempt in range(2):
             token = await self._token_mgr.get_token()
             headers = dict(extra_headers) if extra_headers else {}
-            headers['Authorization'] = f"QQBot {token}"
+            headers['Authorization'] = f'QQBot {token}'
             if 'json' in kwargs:
                 headers.setdefault('Content-Type', 'application/json')
             try:
@@ -51,12 +61,15 @@ class _HttpMixin:
                 body = resp.content
                 _dt = (time.time() - _t) * 1000
                 if _dt > 1500:
-                    log.warning(f"[{self._appid}] API {_dt:.0f}ms {method} {endpoint} -> {resp.status_code}")
+                    log.warning(f'[{self._appid}] API {_dt:.0f}ms {method} {endpoint} -> {resp.status_code}')
                 if resp.status_code >= 400:
                     try:
                         err = json.loads(body)
                     except Exception:
-                        err = {'message': body.decode(errors='replace'), 'code': resp.status_code}
+                        err = {
+                            'message': body.decode(errors='replace'),
+                            'code': resp.status_code,
+                        }
                     if err.get('code') == _TOKEN_EXPIRED_CODE and attempt == 0:
                         await self._token_mgr.refresh_token()
                         await asyncio.sleep(0.1)

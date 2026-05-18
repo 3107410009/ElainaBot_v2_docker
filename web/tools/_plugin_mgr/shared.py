@@ -1,7 +1,7 @@
 """共享状态 / 路径校验 / 入口探测"""
 
-import os
 import logging
+import os
 
 from aiohttp import web
 
@@ -50,6 +50,7 @@ def get_mm():
 
 # ==================== 路径校验 ====================
 
+
 def validate_path(path, base):
     abs_p = os.path.abspath(path)
     return abs_p.startswith(os.path.abspath(base)), abs_p
@@ -92,13 +93,32 @@ def find_entry_or_ban(plugin_dir):
 
 # ==================== 配置文件格式检测 ====================
 
-CONFIG_EXTS = frozenset({'.yaml', '.yml', '.json', '.toml', '.ini', '.cfg',
-                         '.conf', '.txt', '.md', '.backup'})
+CONFIG_EXTS = frozenset(
+    {
+        '.yaml',
+        '.yml',
+        '.json',
+        '.toml',
+        '.ini',
+        '.cfg',
+        '.conf',
+        '.txt',
+        '.md',
+        '.backup',
+    }
+)
 
 _FORMAT_MAP = {
-    '.yaml': 'yaml', '.yml': 'yaml', '.json': 'json', '.toml': 'toml',
-    '.ini': 'ini', '.cfg': 'ini', '.conf': 'ini',
-    '.txt': 'text', '.log': 'text', '.md': 'text',
+    '.yaml': 'yaml',
+    '.yml': 'yaml',
+    '.json': 'json',
+    '.toml': 'toml',
+    '.ini': 'ini',
+    '.cfg': 'ini',
+    '.conf': 'ini',
+    '.txt': 'text',
+    '.log': 'text',
+    '.md': 'text',
 }
 
 
@@ -108,7 +128,6 @@ def detect_config_format(ext):
 
 def list_config_files(data_dir):
     """列出 data/ 下可编辑配置文件 (排除 .db 等)"""
-    from datetime import datetime
     files = []
     if not os.path.isdir(data_dir):
         return files
@@ -119,10 +138,12 @@ def list_config_files(data_dir):
         ext = os.path.splitext(fname)[1].lower()
         if ext not in CONFIG_EXTS:
             continue
-        files.append({
-            'name': fname,
-            'path': fpath.replace('\\', '/'),
-            'format': detect_config_format(ext),
-            'size': os.path.getsize(fpath),
-        })
+        files.append(
+            {
+                'name': fname,
+                'path': fpath.replace('\\', '/'),
+                'format': detect_config_format(ext),
+                'size': os.path.getsize(fpath),
+            }
+        )
     return files

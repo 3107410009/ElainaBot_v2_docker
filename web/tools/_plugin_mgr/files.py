@@ -7,20 +7,23 @@ import shutil
 from aiohttp import web
 
 from web.tools._plugin_mgr.shared import (
-    log, plugins_dir, get_pm, validate_path,
+    get_pm,
+    log,
+    plugins_dir,
+    validate_path,
 )
 
-
-_PLUGIN_TEMPLATE = '''from core.plugin.decorators import handler
+_PLUGIN_TEMPLATE = """from core.plugin.decorators import handler
 
 
 @handler(r"^指令$", name="示例命令", desc="示例插件")
 async def handle_command(event, match):
     await event.reply("Hello, World!")
-'''
+"""
 
 
 # ==================== 启用/禁用 ====================
+
 
 async def handle_toggle_plugin(request: web.Request):
     body = await request.json()
@@ -45,8 +48,13 @@ async def handle_toggle_plugin(request: web.Request):
     os.rename(abs_path, new_abs)
     await _try_reload_plugin(new_abs if not is_disable else abs_path, pdir)
     label = '已禁用' if is_disable else '已启用'
-    return web.json_response({'success': True, 'message': f'插件{label}',
-                              'new_path': new_abs.replace('\\', '/')})
+    return web.json_response(
+        {
+            'success': True,
+            'message': f'插件{label}',
+            'new_path': new_abs.replace('\\', '/'),
+        }
+    )
 
 
 async def _try_reload_plugin(file_path, pdir):
@@ -59,12 +67,13 @@ async def _try_reload_plugin(file_path, pdir):
         plugin_name = rel.split(os.sep)[0]
         if plugin_name and plugin_name in pm.plugins:
             await pm.reload(plugin_name)
-            log.info(f"插件文件变更触发热重载: {plugin_name}")
+            log.info(f'插件文件变更触发热重载: {plugin_name}')
     except Exception as e:
-        log.warning(f"自动热重载失败: {e}")
+        log.warning(f'自动热重载失败: {e}')
 
 
 # ==================== 热重载 ====================
+
 
 async def handle_reload_plugin(request: web.Request):
     body = await request.json()
@@ -79,16 +88,21 @@ async def handle_reload_plugin(request: web.Request):
         if result:
             info = pm.plugins.get(plugin_name)
             count = len(info.handlers) if info else 0
-            return web.json_response({'success': True,
-                                      'message': f'重载完成: {count} 个处理器',
-                                      'handler_count': count})
+            return web.json_response(
+                {
+                    'success': True,
+                    'message': f'重载完成: {count} 个处理器',
+                    'handler_count': count,
+                }
+            )
         return web.json_response({'success': False, 'message': '重载失败 (大型插件不支持热重载)'})
     except Exception as e:
-        log.error(f"热重载 [{plugin_name}] 失败: {e}")
+        log.error(f'热重载 [{plugin_name}] 失败: {e}')
         return web.json_response({'success': False, 'message': f'重载异常: {e}'}, status=500)
 
 
 # ==================== 读取/保存 ====================
+
 
 async def handle_read_plugin(request: web.Request):
     body = await request.json()
@@ -98,11 +112,16 @@ async def handle_read_plugin(request: web.Request):
     valid, abs_path = validate_path(plugin_path, plugins_dir())
     if not valid or not os.path.isfile(abs_path):
         return web.json_response({'success': False, 'message': '无效路径'}, status=403)
-    with open(abs_path, 'r', encoding='utf-8') as f:
+    with open(abs_path, encoding='utf-8') as f:
         content = f.read()
-    return web.json_response({'success': True, 'content': content,
-                              'path': plugin_path.replace('\\', '/'),
-                              'filename': os.path.basename(plugin_path)})
+    return web.json_response(
+        {
+            'success': True,
+            'content': content,
+            'path': plugin_path.replace('\\', '/'),
+            'filename': os.path.basename(plugin_path),
+        }
+    )
 
 
 async def handle_save_plugin(request: web.Request):
@@ -123,6 +142,7 @@ async def handle_save_plugin(request: web.Request):
 
 # ==================== 创建 ====================
 
+
 async def handle_create_plugin(request: web.Request):
     body = await request.json()
     directory = body.get('directory', '')
@@ -141,8 +161,13 @@ async def handle_create_plugin(request: web.Request):
     os.makedirs(target_dir, exist_ok=True)
     with open(plugin_path, 'w', encoding='utf-8') as f:
         f.write(_PLUGIN_TEMPLATE)
-    return web.json_response({'success': True, 'message': '插件已创建',
-                              'path': plugin_path.replace('\\', '/')})
+    return web.json_response(
+        {
+            'success': True,
+            'message': '插件已创建',
+            'path': plugin_path.replace('\\', '/'),
+        }
+    )
 
 
 async def handle_create_folder(request: web.Request):
@@ -173,6 +198,7 @@ async def handle_get_folders(request: web.Request):
 
 # ==================== 上传 ====================
 
+
 async def handle_upload_plugin(request: web.Request):
     reader = await request.multipart()
     file_field = None
@@ -201,11 +227,16 @@ async def handle_upload_plugin(request: web.Request):
         base = safe_name[:-3]
         c = 1
         while os.path.exists(dest):
-            dest = os.path.join(target_dir, f"{base}_{c}.py")
+            dest = os.path.join(target_dir, f'{base}_{c}.py')
             c += 1
 
     content = await file_field.read()
     with open(dest, 'wb') as f:
         f.write(content)
-    return web.json_response({'success': True, 'message': f'上传成功: {os.path.basename(dest)}',
-                              'path': dest.replace('\\', '/')})
+    return web.json_response(
+        {
+            'success': True,
+            'message': f'上传成功: {os.path.basename(dest)}',
+            'path': dest.replace('\\', '/'),
+        }
+    )

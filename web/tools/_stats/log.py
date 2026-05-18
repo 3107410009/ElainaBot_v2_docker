@@ -1,19 +1,25 @@
 """日志查询 — 分页读取 + 登录日志"""
 
 import asyncio
+
 from aiohttp import web
+
 import web.auth as auth
 
 
 def _query_logs_sync(log_type, page_size, offset):
     """同步查询日志 (executor 中调用)"""
     from core.storage.log import SharedLogService
+
     shared = SharedLogService._instance
     if log_type not in ('framework', 'error') or not shared:
         return [], 0
-    rows = shared.query(log_type, f"SELECT * FROM log ORDER BY id DESC LIMIT {page_size} OFFSET {offset}")
+    rows = shared.query(
+        log_type,
+        f'SELECT * FROM log ORDER BY id DESC LIMIT {page_size} OFFSET {offset}',
+    )
     # 用 MAX(id) 估算总数 — id 是 AUTOINCREMENT, 避免全表 COUNT(*) 在大表上的开销
-    total_rows = shared.query(log_type, "SELECT MAX(id) as cnt FROM log")
+    total_rows = shared.query(log_type, 'SELECT MAX(id) as cnt FROM log')
     total = total_rows[0].get('cnt') or 0 if total_rows else 0
     return rows, total
 
@@ -30,21 +36,28 @@ async def handle_get_logs(request: web.Request):
     loop = asyncio.get_running_loop()
     rows, total = await loop.run_in_executor(None, _query_logs_sync, log_type, page_size, offset)
 
-    return web.json_response({
-        'logs': rows, 'total': total,
-        'page': page, 'page_size': page_size,
-        'total_pages': (total + page_size - 1) // page_size if page_size else 0,
-    })
+    return web.json_response(
+        {
+            'logs': rows,
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': (total + page_size - 1) // page_size if page_size else 0,
+        }
+    )
 
 
 async def handle_get_login_logs(request: web.Request):
     logs = auth.get_login_logs()
     total = len(logs)
-    banned = sum(1 for l in logs if l.get('is_banned'))
-    return web.json_response({
-        'success': True, 'data': logs,
-        'stats': {'total': total, 'banned': banned, 'active': total - banned},
-    })
+    banned = sum(1 for entry in logs if entry.get('is_banned'))
+    return web.json_response(
+        {
+            'success': True,
+            'data': logs,
+            'stats': {'total': total, 'banned': banned, 'active': total - banned},
+        }
+    )
 
 
 async def handle_unban_ip(request: web.Request):

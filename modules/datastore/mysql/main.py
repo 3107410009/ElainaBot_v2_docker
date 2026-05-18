@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """MySQL 异步连接池组件
 
 基于 aiomysql, 提供 execute/fetch/upsert 等便捷方法。
@@ -48,10 +47,10 @@ class MySQLPool:
         try:
             import aiomysql
         except ImportError:
-            self._log.error("aiomysql 未安装, MySQL 连接池禁用 (pip install aiomysql)")
+            self._log.error('aiomysql 未安装, MySQL 连接池禁用 (pip install aiomysql)')
             return
         if not self._cfg.get('database'):
-            self._log.warning("未配置 database, 跳过 MySQL 初始化")
+            self._log.warning('未配置 database, 跳过 MySQL 初始化')
             return
         try:
             self._pool = await aiomysql.create_pool(
@@ -68,7 +67,7 @@ class MySQLPool:
             )
             self._available = True
         except Exception as e:
-            self._log.error(f"MySQL 初始化失败: {e}")
+            self._log.error(f'MySQL 初始化失败: {e}')
             self._available = False
 
     def is_available(self):
@@ -86,7 +85,7 @@ class MySQLPool:
     def acquire(self):
         """获取连接 (用作 async with pool.acquire() as conn)"""
         if not self.is_available():
-            raise RuntimeError("MySQL 连接池不可用")
+            raise RuntimeError('MySQL 连接池不可用')
         return self._pool.acquire()
 
     # ---------- 便捷方法 ----------
@@ -95,58 +94,61 @@ class MySQLPool:
         """执行写操作, 返回受影响行数"""
         if not self.is_available():
             return 0
-        async with self._pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                is_ddl = sql.lstrip()[:6].upper() in ('CREATE', 'ALTER ', 'DROP T')
-                if is_ddl:
-                    await cur.execute("SET sql_notes=0")
-                rows = await cur.execute(sql, params)
-                if is_ddl:
-                    await cur.execute("SET sql_notes=1")
-                if not conn.get_autocommit():
-                    await conn.commit()
-                return rows
+        async with self._pool.acquire() as conn, conn.cursor() as cur:
+            is_ddl = sql.lstrip()[:6].upper() in ('CREATE', 'ALTER ', 'DROP T')
+            if is_ddl:
+                await cur.execute('SET sql_notes=0')
+            rows = await cur.execute(sql, params)
+            if is_ddl:
+                await cur.execute('SET sql_notes=1')
+            if not conn.get_autocommit():
+                await conn.commit()
+            return rows
 
     async def execute_many(self, sql, params_list):
         """批量执行"""
         if not self.is_available() or not params_list:
             return 0
-        async with self._pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                rows = await cur.executemany(sql, params_list)
-                if not conn.get_autocommit():
-                    await conn.commit()
-                return rows
+        async with self._pool.acquire() as conn, conn.cursor() as cur:
+            rows = await cur.executemany(sql, params_list)
+            if not conn.get_autocommit():
+                await conn.commit()
+            return rows
 
     async def fetch_one(self, sql, params=None):
         """查询单行, 返回 dict 或 None"""
         if not self.is_available():
             return None
         import aiomysql
-        async with self._pool.acquire() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cur:
-                await cur.execute(sql, params)
-                return await cur.fetchone()
+
+        async with (
+            self._pool.acquire() as conn,
+            conn.cursor(aiomysql.DictCursor) as cur,
+        ):
+            await cur.execute(sql, params)
+            return await cur.fetchone()
 
     async def fetch_all(self, sql, params=None):
         """查询多行, 返回 [dict, ...]"""
         if not self.is_available():
             return []
         import aiomysql
-        async with self._pool.acquire() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cur:
-                await cur.execute(sql, params)
-                return list(await cur.fetchall())
+
+        async with (
+            self._pool.acquire() as conn,
+            conn.cursor(aiomysql.DictCursor) as cur,
+        ):
+            await cur.execute(sql, params)
+            return list(await cur.fetchall())
 
     async def fetch_value(self, sql, params=None, default=None):
         """查询单个值"""
         if not self.is_available():
             return default
-        async with self._pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(sql, params)
-                row = await cur.fetchone()
-                return row[0] if row else default
+        async with self._pool.acquire() as conn, conn.cursor() as cur:
+            await cur.execute(sql, params)
+            row = await cur.fetchone()
+            return row[0] if row else default
 
     async def upsert(self, table, data, conflict_columns):
         """INSERT ... ON DUPLICATE KEY UPDATE"""
@@ -155,18 +157,18 @@ class MySQLPool:
         cols = list(data.keys())
         placeholders = ', '.join(['%s'] * len(cols))
         update_cols = [c for c in cols if c not in conflict_columns]
-        sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders}) AS new"
+        sql = f'INSERT INTO {table} ({", ".join(cols)}) VALUES ({placeholders}) AS new'
         if update_cols:
-            update_clause = ', '.join(f"{c}=new.{c}" for c in update_cols)
-            sql += f" ON DUPLICATE KEY UPDATE {update_clause}"
+            update_clause = ', '.join(f'{c}=new.{c}' for c in update_cols)
+            sql += f' ON DUPLICATE KEY UPDATE {update_clause}'
         return await self.execute(sql, list(data.values()))
 
     async def table_exists(self, table_name):
         """检查表是否存在"""
         row = await self.fetch_one(
-            "SELECT COUNT(*) AS c FROM information_schema.tables "
-            "WHERE table_schema=DATABASE() AND table_name=%s",
-            (table_name,))
+            'SELECT COUNT(*) AS c FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=%s',
+            (table_name,),
+        )
         return bool(row and row.get('c'))
 
     async def execute_transaction(self, sql_list):

@@ -2,11 +2,17 @@
 
 from aiohttp import web
 
-from web.tools._market.shared import _safe_name, _load_market_mirror, _save_market_mirror
-from web.tools._market.fetch import _fetch_plugin_json, _extract_plugins
+from web.tools._market.fetch import _extract_plugins, _fetch_plugin_json
 from web.tools._market.install import (
-    _get_installed_names, _get_installed_module_names,
-    _get_local_module_version, _version_lt,
+    _get_installed_module_names,
+    _get_installed_names,
+    _get_local_module_version,
+    _version_lt,
+)
+from web.tools._market.shared import (
+    _load_market_mirror,
+    _safe_name,
+    _save_market_mirror,
 )
 
 
@@ -23,10 +29,9 @@ async def handle_market_list(request: web.Request):
     if category:
         plugins = [p for p in plugins if p.get('category', '') == category]
     if search:
-        plugins = [p for p in plugins
-                   if search in p.get('name', '').lower()
-                   or search in p.get('description', '').lower()
-                   or search in p.get('author', '').lower()]
+        plugins = [
+            p for p in plugins if search in p.get('name', '').lower() or search in p.get('description', '').lower() or search in p.get('author', '').lower()
+        ]
 
     # 标记已安装状态 + 版本对比
     installed_plugins = _get_installed_names()
@@ -62,14 +67,13 @@ async def handle_market_detail(request: web.Request):
     if data is None:
         return web.json_response({'success': False, 'message': '无法连接插件库'})
     match = next((p for p in _extract_plugins(data) if p.get('name') == name), None)
-    return (web.json_response({'success': True, 'data': match}) if match
-            else web.json_response({'success': False, 'message': '插件不存在'}))
+    return web.json_response({'success': True, 'data': match}) if match else web.json_response({'success': False, 'message': '插件不存在'})
 
 
 async def handle_market_refresh(request: web.Request):
     """强制刷新插件库缓存"""
-    from web.tools._market.fetch import _plugin_cache, _plugin_cache_ts
     import web.tools._market.fetch as _fetch_mod
+
     _fetch_mod._plugin_cache, _fetch_mod._plugin_cache_ts = None, 0
     data = await _fetch_plugin_json(force=True)
     if data is None:
@@ -80,16 +84,20 @@ async def handle_market_refresh(request: web.Request):
 
 # ==================== 市场镜像 API ====================
 
+
 async def handle_market_get_mirror(request: web.Request):
     """获取当前市场镜像偏好 + 可用镜像列表"""
     from web.tools._updater.shared import GITHUB_FILE_MIRRORS, _load_mirror_cache
+
     cached = _load_mirror_cache()
-    return web.json_response({
-        'success': True,
-        'mirror': _load_market_mirror(),
-        'mirrors': list(GITHUB_FILE_MIRRORS),
-        'fast_mirrors': cached,
-    })
+    return web.json_response(
+        {
+            'success': True,
+            'mirror': _load_market_mirror(),
+            'mirrors': list(GITHUB_FILE_MIRRORS),
+            'fast_mirrors': cached,
+        }
+    )
 
 
 async def handle_market_set_mirror(request: web.Request):
@@ -105,5 +113,6 @@ async def handle_market_test_mirror(request: web.Request):
     body = await request.json()
     mirror = body.get('mirror', '')
     from web.tools._updater.mirror import _test_one_mirror
+
     result = await _test_one_mirror(mirror, timeout=5)
     return web.json_response({'success': True, 'data': result})

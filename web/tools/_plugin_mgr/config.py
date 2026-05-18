@@ -1,20 +1,27 @@
 """配置文件读写 (YAML 注释保留 + JSON) + 插件机器人绑定"""
 
+import contextlib
+import json
 import os
 import re
-import json
 import shutil
 
 import yaml
 from aiohttp import web
 
 from web.tools._plugin_mgr.shared import (
-    log, plugins_dir, modules_dir, get_pm, get_mm,
-    validate_config_path, detect_config_format, list_config_files,
+    detect_config_format,
+    get_mm,
+    get_pm,
+    list_config_files,
+    log,
+    modules_dir,
+    plugins_dir,
+    validate_config_path,
 )
 
-
 # ==================== YAML 序列化 (保留注释) ====================
+
 
 def _ys(v):
     """YAML 标量序列化, 必要时加引号"""
@@ -53,7 +60,7 @@ def _rebuild_yaml(data, cmt, pre='', ind=0):
                 for it in v:
                     if isinstance(it, dict):
                         for i, (ik, iv) in enumerate(it.items()):
-                            out.append(f"{cp}{'- ' if not i else '  '}{ik}: {_ys(iv)}")
+                            out.append(f'{cp}{"- " if not i else "  "}{ik}: {_ys(iv)}')
                     else:
                         out.append(f'{cp}- {_ys(it)}')
         else:
@@ -92,7 +99,7 @@ def _extract_yaml_comments(raw_text):
         inline = ''
         m_inline = re.search(r'#\s*(.+)$', stripped)
         if m_inline:
-            before_hash = stripped[:m_inline.start()].rstrip()
+            before_hash = stripped[: m_inline.start()].rstrip()
             if ':' in before_hash:
                 inline = m_inline.group(1).strip()
 
@@ -108,6 +115,7 @@ def _extract_yaml_comments(raw_text):
 
 # ==================== 配置读取/保存 ====================
 
+
 async def handle_read_config(request: web.Request):
     body = await request.json()
     if not body.get('path', ''):
@@ -121,29 +129,30 @@ async def handle_read_config(request: web.Request):
     ext = os.path.splitext(abs_path)[1].lower()
     fmt = detect_config_format(ext)
     try:
-        with open(abs_path, 'r', encoding='utf-8') as f:
+        with open(abs_path, encoding='utf-8') as f:
             raw = f.read()
     except Exception as e:
         return web.json_response({'success': False, 'message': str(e)}, status=500)
 
     parsed, comments = None, {}
     if fmt == 'yaml':
-        try:
+        with contextlib.suppress(Exception):
             parsed = yaml.safe_load(raw)
             comments = _extract_yaml_comments(raw)
-        except Exception:
-            pass
     elif fmt == 'json':
-        try:
+        with contextlib.suppress(Exception):
             parsed = json.loads(raw)
-        except Exception:
-            pass
 
-    return web.json_response({
-        'success': True, 'format': fmt, 'raw': raw,
-        'parsed': parsed, 'comments': comments,
-        'filename': os.path.basename(abs_path),
-    })
+    return web.json_response(
+        {
+            'success': True,
+            'format': fmt,
+            'raw': raw,
+            'parsed': parsed,
+            'comments': comments,
+            'filename': os.path.basename(abs_path),
+        }
+    )
 
 
 async def handle_save_config(request: web.Request):
@@ -163,7 +172,7 @@ async def handle_save_config(request: web.Request):
             return web.json_response({'success': False, 'message': f'YAML 格式错误: {e}'}, status=400)
         if isinstance(parsed, dict) and os.path.isfile(abs_path):
             try:
-                with open(abs_path, 'r', encoding='utf-8') as f:
+                with open(abs_path, encoding='utf-8') as f:
                     old_comments = _extract_yaml_comments(f.read())
                 if old_comments:
                     content = '\n'.join(_rebuild_yaml(parsed, old_comments)) + '\n'
@@ -198,13 +207,14 @@ async def handle_save_config(request: web.Request):
                     await mm.reload(mod_name)
                     reloaded = mod_name
                 except Exception as e:
-                    log.warning(f"模块 {mod_name} 重载失败: {e}")
+                    log.warning(f'模块 {mod_name} 重载失败: {e}')
 
     msg = f'配置已保存, 模块 {reloaded} 已重载' if reloaded else '配置已保存'
     return web.json_response({'success': True, 'message': msg})
 
 
 # ==================== 插件 data/ 配置文件列表 ====================
+
 
 async def handle_plugin_config_files(request: web.Request):
     body = await request.json()
@@ -217,6 +227,7 @@ async def handle_plugin_config_files(request: web.Request):
 
 
 # ==================== 插件机器人绑定 ====================
+
 
 async def handle_get_plugin_bots(request: web.Request):
     pm = get_pm()

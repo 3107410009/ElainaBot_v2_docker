@@ -2,11 +2,12 @@
 
 只适配用户实际能发送的消息类型: 文本、图片、语音、视频。
 """
+
 from __future__ import annotations
 
 import html
-import time
 import re
+import time
 
 _URL_IN_ANGLE = re.compile(r'<(https?://[^>]+)>')
 
@@ -44,7 +45,13 @@ def _build_segments(event) -> list[dict]:
     # 3. 兜底: 完全无内容时补空文本
     if not segments:
         segments.append({'type': 'text', 'data': {'text': ''}})
-
+    if mentions := getattr(event, 'mentions', None):
+        for user in mentions:
+            scope = user.get('scope') or 'single'
+            uid = 0 if scope == 'all' else user.get('id') or user.get('member_openid')
+            data = {'qq': uid} | user
+            at_seg = {'type': 'at', 'data': data}
+            segments.append(at_seg)
     return segments
 
 
@@ -57,23 +64,29 @@ def _segments_to_raw(segments: list[dict]) -> str:
         if t == 'text':
             parts.append(d.get('text', ''))
         elif t == 'image':
-            parts.append(f"[CQ:image,file={d.get('file', '')}]")
+            parts.append(f'[CQ:image,file={d.get("file", "")}]')
         elif t == 'record':
-            parts.append(f"[CQ:record,file={d.get('file', '')}]")
+            parts.append(f'[CQ:record,file={d.get("file", "")}]')
         elif t == 'video':
-            parts.append(f"[CQ:video,file={d.get('file', '')}]")
+            parts.append(f'[CQ:video,file={d.get("file", "")}]')
         else:
             kv = ','.join(f'{k}={v}' for k, v in d.items())
-            parts.append(f"[CQ:{t},{kv}]" if kv else f"[CQ:{t}]")
+            parts.append(f'[CQ:{t},{kv}]' if kv else f'[CQ:{t}]')
     return ''.join(parts)
 
 
 async def convert_message_event(event, id_mapper, self_qq: int) -> dict | None:
     """将 Elaina Event 转换为 OneBot 11 message 事件"""
     et = event.event_type
-    if et not in ('GROUP_AT_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE',
-                   'AT_MESSAGE_CREATE', 'DIRECT_MESSAGE_CREATE', 'MESSAGE_CREATE',
-                   'INTERACTION_CREATE'):
+    if et not in (
+        'GROUP_AT_MESSAGE_CREATE',
+        'GROUP_MESSAGE_CREATE',
+        'C2C_MESSAGE_CREATE',
+        'AT_MESSAGE_CREATE',
+        'DIRECT_MESSAGE_CREATE',
+        'MESSAGE_CREATE',
+        'INTERACTION_CREATE',
+    ):
         return None
 
     user_id = event.user_id or ''
@@ -83,7 +96,9 @@ async def convert_message_event(event, id_mapper, self_qq: int) -> dict | None:
 
     qq_user = await id_mapper.to_qq(user_id, 'user')
     is_group = event.is_group or bool(group_id and et != 'C2C_MESSAGE_CREATE')
-    qq_group = await id_mapper.to_qq(group_id, 'group') if (is_group and group_id) else 0
+    qq_group = (
+        await id_mapper.to_qq(group_id, 'group') if (is_group and group_id) else 0
+    )
 
     segments = _build_segments(event)
 
@@ -92,14 +107,21 @@ async def convert_message_event(event, id_mapper, self_qq: int) -> dict | None:
         resolved = (event.interaction_data.get('data') or {}).get('resolved') or {}
         btn_data = resolved.get('button_data', '')
         btn_id = resolved.get('button_id', '')
-        segments.insert(0, {'type': 'button', 'data': {
-            'id': btn_id, 'data': btn_data,
-        }})
+        segments.insert(
+            0,
+            {
+                'type': 'button',
+                'data': {
+                    'id': btn_id,
+                    'data': btn_data,
+                },
+            },
+        )
 
     raw_message = _segments_to_raw(segments)
 
     now = int(time.time())
-    msg_id = hash(event.message_id or f"{now}{user_id}") & 0x7FFFFFFF
+    msg_id = hash(event.message_id or f'{now}{user_id}') & 0x7FFFFFFF
 
     ob_event = {
         'time': now,
@@ -118,6 +140,8 @@ async def convert_message_event(event, id_mapper, self_qq: int) -> dict | None:
             'sex': 'unknown',
             'age': 0,
         },
+        'real_user_id': event.user_id,
+        'real_group_id': event.group_id,
     }
 
     if is_group:
@@ -134,8 +158,8 @@ async def convert_message_event(event, id_mapper, self_qq: int) -> dict | None:
 _LIFECYCLE_MAP = {
     'GROUP_ADD_ROBOT': ('group_increase', 'invite', True),
     'GROUP_DEL_ROBOT': ('group_decrease', 'kick_me', True),
-    'FRIEND_ADD':      ('friend_add', '', False),
-    'FRIEND_DEL':      ('friend_recall', '', False),
+    'FRIEND_ADD': ('friend_add', '', False),
+    'FRIEND_DEL': ('friend_recall', '', False),
 }
 
 
@@ -148,13 +172,18 @@ async def convert_lifecycle_event(event, id_mapper, self_qq: int) -> dict | None
     notice_type, sub_type, need_group = entry
     qq_user = await id_mapper.to_qq(event.user_id, 'user') if event.user_id else 0
     result = {
-        'time': int(time.time()), 'self_id': self_qq,
-        'post_type': 'notice', 'notice_type': notice_type,
+        'time': int(time.time()),
+        'self_id': self_qq,
+        'post_type': 'notice',
+        'notice_type': notice_type,
         'user_id': self_qq if need_group else qq_user,
     }
     if sub_type:
         result['sub_type'] = sub_type
     if need_group:
-        result['group_id'] = await id_mapper.to_qq(event.group_id, 'group') if event.group_id else 0
+        group_id = 0
+        if event.group_id:
+            group_id = await id_mapper.to_qq(event.group_id, 'group')
+        result['group_id'] = group_id
         result['operator_id'] = qq_user
     return result

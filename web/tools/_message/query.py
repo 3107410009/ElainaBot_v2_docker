@@ -1,9 +1,10 @@
 """消息管理 — SQL 查询 (聊天列表聚合, 历史消息)"""
 
-from datetime import timedelta, date as _date
+from datetime import date as _date
+from datetime import timedelta
 
 import web.tools._message.shared as _shared
-from web.tools._message.shared import _iter_bots, _batch_get_nicknames
+from web.tools._message.shared import _iter_bots
 
 
 def _recent_dates(days=1):
@@ -19,13 +20,13 @@ def _query_chat_messages_sync(chat_type, chat_id, appid_filter, days=3, limit=30
     dates = _recent_dates(days)
     results = []
     if chat_type == 'group':
-        where = "group_id = ?"
+        where = 'group_id = ?'
         params = (chat_id,)
     else:
         # 私聊: user_id 匹配 且 group_id 为空或 'c2c'
         where = "user_id = ? AND (group_id = '' OR group_id = 'c2c')"
         params = (chat_id,)
-    sql = f"SELECT * FROM log WHERE {where} ORDER BY id DESC LIMIT {limit}"
+    sql = f'SELECT * FROM log WHERE {where} ORDER BY id DESC LIMIT {limit}'
     for appid, inst in _iter_bots(appid_filter):
         bot_qq = getattr(inst, 'robot_qq', '') or ''
         bot_name = getattr(inst, 'name', appid)
@@ -49,18 +50,19 @@ def _query_older_messages_sync(chat_type, chat_id, appid_filter, before_date_str
     if not _shared._bot_manager:
         return [], '', False
     from datetime import datetime
+
     try:
         bd = datetime.strptime(before_date_str, '%Y-%m-%d').date()
     except ValueError:
         return [], '', False
 
     if chat_type == 'group':
-        where = "group_id = ?"
+        where = 'group_id = ?'
         params = (chat_id,)
     else:
         where = "user_id = ? AND (group_id = '' OR group_id = 'c2c')"
         params = (chat_id,)
-    sql = f"SELECT * FROM log WHERE {where} ORDER BY id DESC LIMIT {limit}"
+    sql = f'SELECT * FROM log WHERE {where} ORDER BY id DESC LIMIT {limit}'
 
     for offset in range(1, max_days + 1):
         d = (bd - timedelta(days=offset)).strftime('%Y-%m-%d')
@@ -91,15 +93,15 @@ def _aggregate_chats_sync(chat_type, appid_filter, days=1):
     dates = _recent_dates(days)
     if chat_type == 'group':
         agg_sql = (
-            "SELECT group_id AS chat_id, MAX(id) AS last_id, MAX(timestamp) AS last_time, "
+            'SELECT group_id AS chat_id, MAX(id) AS last_id, MAX(timestamp) AS last_time, '
             "COUNT(*) AS msg_count FROM log WHERE group_id != '' AND group_id != 'c2c' "
-            "GROUP BY group_id"
+            'GROUP BY group_id'
         )
     else:
         agg_sql = (
-            "SELECT user_id AS chat_id, MAX(id) AS last_id, MAX(timestamp) AS last_time, "
+            'SELECT user_id AS chat_id, MAX(id) AS last_id, MAX(timestamp) AS last_time, '
             "COUNT(*) AS msg_count FROM log WHERE user_id != '' AND (group_id = '' OR group_id = 'c2c') "
-            "GROUP BY user_id"
+            'GROUP BY user_id'
         )
     merged = {}
     for appid, inst in _iter_bots(appid_filter):
@@ -116,8 +118,15 @@ def _aggregate_chats_sync(chat_type, appid_filter, days=1):
                 key = (appid, cid)
                 item = merged.get(key)
                 if not item:
-                    item = {'chat_id': cid, 'appid': appid, 'bot_name': bot_name,
-                            'last_id': 0, 'last_time': '', 'last_date': '', 'msg_count': 0}
+                    item = {
+                        'chat_id': cid,
+                        'appid': appid,
+                        'bot_name': bot_name,
+                        'last_id': 0,
+                        'last_time': '',
+                        'last_date': '',
+                        'msg_count': 0,
+                    }
                     merged[key] = item
                 item['msg_count'] += r.get('msg_count', 0) or 0
                 rid = r.get('last_id', 0) or 0
@@ -128,6 +137,32 @@ def _aggregate_chats_sync(chat_type, appid_filter, days=1):
                     item['last_date'] = d
     if not merged:
         return []
-    # 按 last_time 排序
+    # 按 last_time 排序, 仅取前 200 个聊天的 last_content
     chats = sorted(merged.values(), key=lambda c: c.get('last_time', ''), reverse=True)
+    top = chats[:200]
+    by_path = {}
+    for item in top:
+        if item['last_id']:
+            by_path.setdefault((item['appid'], item['last_date']), []).append(item['last_id'])
+    id_to_content = {}
+    for (appid, d), ids in by_path.items():
+        inst = _shared._bot_manager._bots.get(appid)
+        if not inst or not ids:
+            continue
+        for i in range(0, len(ids), 500):
+            chunk = ids[i : i + 500]
+            ph = ','.join('?' * len(chunk))
+            try:
+                rows = inst.log_service.query(
+                    'message',
+                    f'SELECT id, content FROM log WHERE id IN ({ph})',
+                    tuple(chunk),
+                    date=d,
+                )
+                for r in rows:
+                    id_to_content[(appid, r.get('id'))] = r.get('content', '')
+            except Exception:
+                pass
+    for item in top:
+        item['last_content'] = id_to_content.get((item['appid'], item['last_id']), '')
     return chats

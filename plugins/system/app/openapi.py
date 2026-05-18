@@ -1,27 +1,27 @@
 """开放平台查询: 扫码登录 / bot通知 / bot列表 / bot数据 / 切换appid"""
 
-import os
-import re
-import json
-import time
 import asyncio
-from core.plugin.decorators import handler, on_load
-from core.base.logger import get_logger, PLUGIN
-from core.base.config import cfg
+import contextlib
+import json
+import os
+import time
 
-log = get_logger(PLUGIN, "开放平台")
+from core.base.config import cfg
+from core.base.logger import PLUGIN, get_logger
+from core.plugin.decorators import handler, on_load
+
+log = get_logger(PLUGIN, '开放平台')
 
 # ==================== 数据管理 ====================
 
 _PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_DATA_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(_PLUGIN_DIR)), 'data')
+_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(_PLUGIN_DIR)), 'data')
 os.makedirs(_DATA_DIR, exist_ok=True)
 
 _DATA_FILE = os.path.join(_DATA_DIR, 'openapi.json')
 
-_user_data = {}        # {user_id: login_data}
-_login_tasks = {}      # {user_id: (timestamp, qr)}
+_user_data = {}  # {user_id: login_data}
+_login_tasks = {}  # {user_id: (timestamp, qr)}
 _last_login_time = {}  # {user_id: timestamp}  防重复登录
 
 _api = None
@@ -32,6 +32,7 @@ def _get_api():
     if _api is None:
         try:
             from web.tools._bot.api import get_bot_api
+
             _api = get_bot_api()
         except ImportError:
             _api = None
@@ -42,7 +43,7 @@ def _load_data():
     global _user_data
     try:
         if os.path.exists(_DATA_FILE):
-            with open(_DATA_FILE, 'r', encoding='utf-8') as f:
+            with open(_DATA_FILE, encoding='utf-8') as f:
                 _user_data = json.load(f)
     except Exception:
         _user_data = {}
@@ -79,11 +80,13 @@ def _owner_ids(event):
 
 def _nav_buttons():
     """通用导航按钮行"""
-    return [[
-        {'text': '通知', 'data': 'bot通知', 'type': 1, 'style': 1},
-        {'text': '数据', 'data': 'bot数据4', 'type': 2, 'style': 1},
-        {'text': '列表', 'data': 'bot列表', 'type': 1, 'style': 1},
-    ]]
+    return [
+        [
+            {'text': '通知', 'data': 'bot通知', 'type': 1, 'style': 1},
+            {'text': '数据', 'data': 'bot数据4', 'type': 2, 'style': 1},
+            {'text': '列表', 'data': 'bot列表', 'type': 1, 'style': 1},
+        ]
+    ]
 
 
 def _login_button():
@@ -109,10 +112,11 @@ async def _reply_expired(event):
 @on_load
 def _init():
     _load_data()
-    log.info("开放平台查询插件已加载")
+    log.info('开放平台查询插件已加载')
 
 
 # ==================== 管理登录 ====================
+
 
 @handler(r'^管理登录$', name='管理登录', desc='扫码登录QQ开放平台')
 async def login(event, match):
@@ -143,9 +147,7 @@ async def login(event, match):
         return
 
     # 发送二维码消息
-    content = (f"<@{user_id}>\n[QQ开发平台管理端登录]\n"
-               f"登录具有时效性，请尽快登录\n\n"
-               f">当你选择登录，代表你已经同意将数据托管给伊蕾娜Bot。")
+    content = f'<@{user_id}>\n[QQ开发平台管理端登录]\n登录具有时效性，请尽快登录\n\n>当你选择登录，代表你已经同意将数据托管给伊蕾娜Bot。'
 
     if _use_md(event):
         login_btn = {'text': '点击登录', 'data': url, 'type': 0, 'style': 4}
@@ -167,8 +169,8 @@ async def login(event, match):
                 segs = domain.split('.')
                 segs[-1] = segs[-1].upper()
                 domain = '.'.join(segs)
-            display_url = f"{protocol}://{domain}{path}"
-        await event.reply(f"{content}\n\n登录链接: {display_url}")
+            display_url = f'{protocol}://{domain}{path}'
+        await event.reply(f'{content}\n\n登录链接: {display_url}')
 
     # 后台轮询登录状态 (handler 返回后框架会清空 event._sender, 需在此提前捕获)
     sender = event._sender
@@ -190,32 +192,28 @@ async def _poll_login(event, sender, user_id, qr, use_md):
 
                 app_type = login_data.get('appType')
                 app_type_str = '小程序' if app_type == '0' else '机器人' if app_type == '2' else '未知'
-                content = (f"[{login_data.get('uin')}]登录成功\n\n"
-                           f">登录类型：{app_type_str}\n"
-                           f"AppId：{login_data.get('appId')}\n"
-                           f"切换+appid可以切换机器人")
+                content = f'[{login_data.get("uin")}]登录成功\n\n>登录类型：{app_type_str}\nAppId：{login_data.get("appId")}\n切换+appid可以切换机器人'
 
                 buttons = _nav_buttons() if use_md else None
                 try:
                     await sender.reply(event, content, buttons=buttons)
                 except Exception as e:
-                    log.warning(f"登录成功回复失败: {e}")
+                    log.warning(f'登录成功回复失败: {e}')
 
                 _last_login_time[user_id] = time.time()
                 _login_tasks.pop(user_id, None)
                 return
         except Exception as e:
-            log.debug(f"轮询登录态异常: {e}")
+            log.debug(f'轮询登录态异常: {e}')
 
     # 超时
-    try:
-        await sender.reply(event, f"<@{user_id}>登录失效，请重新尝试")
-    except Exception:
-        pass
+    with contextlib.suppress(Exception):
+        await sender.reply(event, f'<@{user_id}>登录失效，请重新尝试')
     _login_tasks.pop(user_id, None)
 
 
 # ==================== bot通知 ====================
+
 
 @handler(r'^bot通知$', name='bot通知', desc='查看开放平台私信通知')
 async def get_message(event, match):
@@ -227,19 +225,18 @@ async def get_message(event, match):
         await _reply_not_logged_in(event)
         return
 
-    res = await api.get_private_messages(
-        uin=ud.get('uin'), quid=ud.get('developerId'), ticket=ud.get('ticket'))
+    res = await api.get_private_messages(uin=ud.get('uin'), quid=ud.get('developerId'), ticket=ud.get('ticket'))
 
     if res.get('code') != 0:
         await _reply_expired(event)
         return
 
-    msglist = [f"Uin:{ud.get('uin')}\nAppid:{ud.get('appId')}\n\n```python"]
+    msglist = [f'Uin:{ud.get("uin")}\nAppid:{ud.get("appId")}\n\n```python']
     messages = res.get('messages', [])
     for j in range(min(len(messages), 8)):
         if j > 0:
             msglist.append('——————')
-        message_content = messages[j].get('content', '').split("\n\n")[0].strip()
+        message_content = messages[j].get('content', '').split('\n\n')[0].strip()
         message_time = messages[j].get('send_time', '')
         msglist.append(message_content)
         msglist.append(message_time)
@@ -254,6 +251,7 @@ async def get_message(event, match):
 
 # ==================== bot列表 ====================
 
+
 @handler(r'^bot列表$', name='bot列表', desc='查看已绑定的机器人列表')
 async def get_botlist(event, match):
     api = _get_api()
@@ -264,14 +262,13 @@ async def get_botlist(event, match):
         await _reply_not_logged_in(event)
         return
 
-    res = await api.get_bot_list(
-        uin=ud.get('uin'), quid=ud.get('developerId'), ticket=ud.get('ticket'))
+    res = await api.get_bot_list(uin=ud.get('uin'), quid=ud.get('developerId'), ticket=ud.get('ticket'))
 
     if res.get('code') != 0:
         await _reply_expired(event)
         return
 
-    msglist = [f"Uin:{ud.get('uin')}"]
+    msglist = [f'Uin:{ud.get("uin")}']
     apps = res.get('data', {}).get('apps', [])
     for j in range(len(apps)):
         if j > 0:
@@ -293,6 +290,7 @@ async def get_botlist(event, match):
 
 # ==================== bot数据 ====================
 
+
 @handler(r'^bot数据(\d+|max)$', name='bot数据', desc='查看bot消息/群/好友数据统计')
 async def get_botdata(event, match):
     api = _get_api()
@@ -304,8 +302,12 @@ async def get_botdata(event, match):
         return
 
     days = match.group(1)
-    cred = dict(uin=ud.get('uin'), quid=ud.get('developerId'),
-                ticket=ud.get('ticket'), appid=ud.get('appId'))
+    cred = dict(
+        uin=ud.get('uin'),
+        quid=ud.get('developerId'),
+        ticket=ud.get('ticket'),
+        appid=ud.get('appId'),
+    )
 
     data1 = await api.get_bot_data(**cred, data_type=1)
     data2 = await api.get_bot_data(**cred, data_type=2)
@@ -322,19 +324,19 @@ async def get_botdata(event, match):
     def fmt(data_list, index):
         item = data_list[index] if index < len(data_list) else {}
         return {
-            "报告日期": item.get('报告日期', '0'),
-            "上行消息量": item.get('上行消息量', '0'),
-            "上行消息人数": item.get('上行消息人数', '0'),
-            "下行消息量": item.get('下行消息量', '0'),
-            "总消息量": item.get('总消息量', '0'),
-            "现有群组": item.get('现有群组', '0'),
-            "已使用群组": item.get('已使用群组', '0'),
-            "新增群组": item.get('新增群组', '0'),
-            "移除群组": item.get('移除群组', '0'),
-            "现有好友数": item.get('现有好友数', '0'),
-            "已使用好友数": item.get('已使用好友数', '0'),
-            "新增好友数": item.get('新增好友数', '0'),
-            "移除好友数": item.get('移除好友数', '0'),
+            '报告日期': item.get('报告日期', '0'),
+            '上行消息量': item.get('上行消息量', '0'),
+            '上行消息人数': item.get('上行消息人数', '0'),
+            '下行消息量': item.get('下行消息量', '0'),
+            '总消息量': item.get('总消息量', '0'),
+            '现有群组': item.get('现有群组', '0'),
+            '已使用群组': item.get('已使用群组', '0'),
+            '新增群组': item.get('新增群组', '0'),
+            '移除群组': item.get('移除群组', '0'),
+            '现有好友数': item.get('现有好友数', '0'),
+            '已使用好友数': item.get('已使用好友数', '0'),
+            '新增好友数': item.get('新增好友数', '0'),
+            '移除好友数': item.get('移除好友数', '0'),
         }
 
     def day_str(index):
@@ -342,13 +344,15 @@ async def get_botdata(event, match):
         m = fmt(msg_data, index)
         g = fmt(group_data, index)
         f = fmt(friend_data, index)
-        return (f"{prefix}【日期：{m['报告日期']}】\n"
-                f"消息统计:\n上行：{m['上行消息量']}  人数：{m['上行消息人数']}\n"
-                f"总量：{m['总消息量']}  下行：{m['下行消息量']}\n"
-                f"群组统计：\n新增：{g['新增群组']}  减少：{g['移除群组']}\n"
-                f"已有：{g['现有群组']}  使用：{g['已使用群组']}\n"
-                f"好友统计：\n新增：{f['新增好友数']}  减少：{f['移除好友数']}\n"
-                f"已有：{f['现有好友数']}  使用：{f['已使用好友数']}")
+        return (
+            f'{prefix}【日期：{m["报告日期"]}】\n'
+            f'消息统计:\n上行：{m["上行消息量"]}  人数：{m["上行消息人数"]}\n'
+            f'总量：{m["总消息量"]}  下行：{m["下行消息量"]}\n'
+            f'群组统计：\n新增：{g["新增群组"]}  减少：{g["移除群组"]}\n'
+            f'已有：{g["现有群组"]}  使用：{g["已使用群组"]}\n'
+            f'好友统计：\n新增：{f["新增好友数"]}  减少：{f["移除好友数"]}\n'
+            f'已有：{f["现有好友数"]}  使用：{f["已使用好友数"]}'
+        )
 
     max_days = min(len(msg_data), len(group_data), len(friend_data))
     actual_days = max_days if days == 'max' else min(int(days), max_days)
@@ -356,13 +360,13 @@ async def get_botdata(event, match):
     total_up = 0
     for i in range(len(msg_data)):
         total_up += int(fmt(msg_data, i)['上行消息人数'])
-    avg_dau = "{:.2f}".format(total_up / 30) if msg_data else "0"
+    avg_dau = f'{total_up / 30:.2f}' if msg_data else '0'
 
     day_list = [day_str(i) for i in range(actual_days)]
     msglist = [
-        f"Uid：{ud.get('uin')}\nappid：{ud.get('appId')}\n30天平均DAU: {avg_dau}\n\n```python",
+        f'Uid：{ud.get("uin")}\nappid：{ud.get("appId")}\n30天平均DAU: {avg_dau}\n\n```python',
         *day_list,
-        "\n```\n"
+        '\n```\n',
     ]
     content = '\n'.join(msglist)
 
@@ -373,6 +377,7 @@ async def get_botdata(event, match):
 
 
 # ==================== 切换appid ====================
+
 
 @handler(r'^切换appid\s*(.+)$', name='切换appid', desc='切换当前操作的机器人AppID')
 async def switch_appid(event, match):
@@ -395,8 +400,7 @@ async def switch_appid(event, match):
         return
 
     # 验证 AppID 是否有效
-    res = await api.get_bot_list(
-        uin=ud.get('uin'), quid=ud.get('developerId'), ticket=ud.get('ticket'))
+    res = await api.get_bot_list(uin=ud.get('uin'), quid=ud.get('developerId'), ticket=ud.get('ticket'))
 
     if res.get('code') != 0:
         await _reply_expired(event)
@@ -412,18 +416,15 @@ async def switch_appid(event, match):
             break
 
     if not valid:
-        lines = [f"{i}. {a.get('app_name', '未命名')}: {a.get('app_id')}"
-                 for i, a in enumerate(apps, 1)]
-        await event.reply(f"提供的AppID无效，请从以下可用AppID中选择：\n\n```python\n{chr(10).join(lines)}\n```\n")
+        lines = [f'{i}. {a.get("app_name", "未命名")}: {a.get("app_id")}' for i, a in enumerate(apps, 1)]
+        await event.reply(f'提供的AppID无效，请从以下可用AppID中选择：\n\n```python\n{chr(10).join(lines)}\n```\n')
         return
 
     old_appid = ud.get('appId')
     ud['appId'] = new_appid
     _save_ud(event.user_id, ud)
 
-    content = (f"AppID已切换成功\n\n```python\n"
-               f"原AppID: {old_appid}\n新AppID: {new_appid}\n"
-               f"机器人: {app_name}\n```\n")
+    content = f'AppID已切换成功\n\n```python\n原AppID: {old_appid}\n新AppID: {new_appid}\n机器人: {app_name}\n```\n'
 
     if _use_md(event):
         await event.reply(content, buttons=_nav_buttons())

@@ -1,10 +1,10 @@
 """数据库浏览器 — 查询/浏览/删除"""
 
+import logging
 import os
 import re
 import sqlite3
-import logging
-from datetime import datetime
+
 from aiohttp import web
 
 log = logging.getLogger('ElainaBot.web.database')
@@ -15,7 +15,7 @@ _base_dir = ''
 # 禁止的 SQL 关键词 (防止写操作)
 _WRITE_KEYWORDS = re.compile(
     r'\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|ATTACH|DETACH|REINDEX|VACUUM|PRAGMA\s+\w+\s*=)\b',
-    re.IGNORECASE
+    re.IGNORECASE,
 )
 
 
@@ -28,6 +28,7 @@ def set_context(bot_manager, base_dir: str):
 def _log_base_dir():
     """日志根目录"""
     from core.base.config import cfg
+
     log_dir = cfg.get('settings', 'logging.dir', 'log')
     return os.path.join(_base_dir, 'data', log_dir)
 
@@ -69,12 +70,15 @@ def _collect_db_files(result, directory, base, date):
     for f in sorted(os.listdir(directory)):
         fpath = os.path.join(directory, f)
         if f.endswith('.db') and os.path.isfile(fpath):
-            result.append({
-                **base, 'name': f,
-                'path': fpath.replace('\\', '/'),
-                'size': os.path.getsize(fpath),
-                'date': date,
-            })
+            result.append(
+                {
+                    **base,
+                    'name': f,
+                    'path': fpath.replace('\\', '/'),
+                    'size': os.path.getsize(fpath),
+                    'date': date,
+                }
+            )
 
 
 def _validate_db_path(db_path):
@@ -92,7 +96,7 @@ def _validate_db_path(db_path):
 
 def _open_readonly(db_path):
     """以只读方式打开 SQLite"""
-    uri = f"file:{db_path}?mode=ro"
+    uri = f'file:{db_path}?mode=ro'
     conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
@@ -106,6 +110,7 @@ def _open_readwrite(db_path):
 
 
 # ==================== API handlers ====================
+
 
 async def handle_list_databases(request: web.Request):
     """列出所有数据库文件"""
@@ -127,8 +132,7 @@ async def handle_list_tables(request: web.Request):
     try:
         conn = _open_readonly(abs_path)
         tables = []
-        for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"):
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"):
             tname = row['name']
             count_row = conn.execute(f'SELECT COUNT(*) as c FROM "{tname}"').fetchone()
             count = count_row['c'] if count_row else 0
@@ -136,22 +140,26 @@ async def handle_list_tables(request: web.Request):
             # 获取列信息
             columns = []
             for col in conn.execute(f'PRAGMA table_info("{tname}")'):
-                columns.append({
-                    'name': col['name'],
-                    'type': col['type'],
-                    'notnull': bool(col['notnull']),
-                    'pk': bool(col['pk']),
-                })
+                columns.append(
+                    {
+                        'name': col['name'],
+                        'type': col['type'],
+                        'notnull': bool(col['notnull']),
+                        'pk': bool(col['pk']),
+                    }
+                )
 
-            tables.append({
-                'name': tname,
-                'count': count,
-                'columns': columns,
-            })
+            tables.append(
+                {
+                    'name': tname,
+                    'count': count,
+                    'columns': columns,
+                }
+            )
         conn.close()
         return web.json_response({'success': True, 'tables': tables})
     except Exception as e:
-        log.warning(f"列出表失败: {e}")
+        log.warning(f'列出表失败: {e}')
         return web.json_response({'success': False, 'message': str(e)}, status=500)
 
 
@@ -191,12 +199,12 @@ async def handle_query_table(request: web.Request):
             order_clause = f'ORDER BY "{order_by}" {order_dir}'
         else:
             # 默认按 id 或 rowid 倒序
-            order_clause = f'ORDER BY rowid DESC'
+            order_clause = 'ORDER BY rowid DESC'
 
         offset = (page - 1) * page_size
         rows = conn.execute(
             f'SELECT rowid AS _rowid, * FROM "{table}" {order_clause} LIMIT ? OFFSET ?',
-            (page_size, offset)
+            (page_size, offset),
         ).fetchall()
 
         data = [dict(r) for r in rows]
@@ -207,16 +215,18 @@ async def handle_query_table(request: web.Request):
             columns.append({'name': col['name'], 'type': col['type']})
 
         conn.close()
-        return web.json_response({
-            'success': True,
-            'data': data,
-            'columns': columns,
-            'total': total,
-            'page': page,
-            'page_size': page_size,
-        })
+        return web.json_response(
+            {
+                'success': True,
+                'data': data,
+                'columns': columns,
+                'total': total,
+                'page': page,
+                'page_size': page_size,
+            }
+        )
     except Exception as e:
-        log.warning(f"查询表失败: {e}")
+        log.warning(f'查询表失败: {e}')
         return web.json_response({'success': False, 'message': str(e)}, status=500)
 
 
@@ -248,12 +258,14 @@ async def handle_execute_sql(request: web.Request):
         columns = [{'name': desc[0], 'type': ''} for desc in cursor.description] if cursor.description else []
         data = [dict(r) for r in rows]
         conn.close()
-        return web.json_response({
-            'success': True,
-            'data': data,
-            'columns': columns,
-            'total': len(data),
-        })
+        return web.json_response(
+            {
+                'success': True,
+                'data': data,
+                'columns': columns,
+                'total': len(data),
+            }
+        )
     except Exception as e:
         return web.json_response({'success': False, 'message': str(e)}, status=400)
 
@@ -287,12 +299,11 @@ async def handle_delete_rows(request: web.Request):
     try:
         conn = _open_readwrite(abs_path)
         placeholders = ','.join('?' * len(rowids))
-        cursor = conn.execute(
-            f'DELETE FROM "{table}" WHERE rowid IN ({placeholders})', rowids)
+        cursor = conn.execute(f'DELETE FROM "{table}" WHERE rowid IN ({placeholders})', rowids)
         deleted = cursor.rowcount
         conn.commit()
         conn.close()
         return web.json_response({'success': True, 'deleted': deleted})
     except Exception as e:
-        log.warning(f"删除数据失败: {e}")
+        log.warning(f'删除数据失败: {e}')
         return web.json_response({'success': False, 'message': str(e)}, status=500)

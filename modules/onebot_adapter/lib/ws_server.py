@@ -4,15 +4,17 @@
 反向 WS: 主动连接外部框架的 WS 地址, 如 ws://yunzai:2536/OneBot/v11/ws
 遵循 OneBot 11 标准: https://github.com/botuniverse/onebot-11
 """
+
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import re
 import time
-import asyncio
+
 import aiohttp
 from aiohttp import web
-
 
 _B64_RE = re.compile(r'(base64://|"base64://|data:image[^,]*,)[A-Za-z0-9+/=]{64,}')
 
@@ -23,13 +25,14 @@ def _mask_b64(s: str) -> str:
 
 class _WSWrapper:
     """统一的 WS 发送接口, 兼容 aiohttp ServerWS 和 ClientWS"""
+
     __slots__ = ('_ws', '_is_client', 'remote', 'appid', 'self_qq')
 
     def __init__(self, ws, remote='', is_client=False, appid='', self_qq=0):
         self._ws = ws
         self._is_client = is_client
         self.remote = remote
-        self.appid = appid      # 绑定的 appid (空=接收所有)
+        self.appid = appid  # 绑定的 appid (空=接收所有)
         self.self_qq = self_qq  # 该连接的 self_id
 
     async def send_str(self, data: str):
@@ -47,16 +50,36 @@ class OneBotWSServer:
     """OneBot 11 WS 处理器 (正向 + 反向)"""
 
     __slots__ = (
-        '_token', '_hb_interval', '_ws_path', '_reverse_entries',
-        '_on_action', '_default_qq', 'qq_map', '_log', '_debug',
-        '_clients', '_hb_task', '_reverse_tasks', '_reverse_session',
+        '_token',
+        '_hb_interval',
+        '_ws_path',
+        '_reverse_entries',
+        '_on_action',
+        '_default_qq',
+        'qq_map',
+        '_log',
+        '_debug',
+        '_clients',
+        '_hb_task',
+        '_reverse_tasks',
+        '_reverse_session',
         '_reconnect_interval',
     )
 
-    def __init__(self, *, access_token, heartbeat_interval,
-                 on_action, default_qq=0, qq_map=None, log,
-                 ws_path='/onebot', reverse_entries=None, reconnect_interval=5,
-                 debug=False):
+    def __init__(
+        self,
+        *,
+        access_token,
+        heartbeat_interval,
+        on_action,
+        default_qq=0,
+        qq_map=None,
+        log,
+        ws_path='/onebot',
+        reverse_entries=None,
+        reconnect_interval=5,
+        debug=False,
+    ):
         self._token = access_token or ''
         self._hb_interval = heartbeat_interval
         self._on_action = on_action
@@ -82,11 +105,16 @@ class OneBotWSServer:
         return bool(self._clients)
 
     def _lifecycle_json(self, self_qq: int, sub_type: str = 'connect') -> str:
-        return json.dumps({
-            'time': int(time.time()), 'self_id': self_qq,
-            'post_type': 'meta_event', 'meta_event_type': 'lifecycle',
-            'sub_type': sub_type,
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                'time': int(time.time()),
+                'self_id': self_qq,
+                'post_type': 'meta_event',
+                'meta_event_type': 'lifecycle',
+                'sub_type': sub_type,
+            },
+            ensure_ascii=False,
+        )
 
     # ==================== 正向 WS (服务端) ====================
 
@@ -94,9 +122,11 @@ class OneBotWSServer:
         """将正向 WS 路由挂载到已有的 aiohttp Application"""
         try:
             app.router.add_get(self._ws_path, self._forward_ws_handler)
-            self._log.info(f"正向 WS 路由已挂载: {self._ws_path}")
+            self._log.info(f'正向 WS 路由已挂载: {self._ws_path}')
         except (RuntimeError, ValueError):
-            self._log.warning(f"正向 WS 路由注册跳过 (路由器已冻结, 需重启框架生效): {self._ws_path}")
+            self._log.warning(
+                f'正向 WS 路由注册跳过 (路由器已冻结, 需重启框架生效): {self._ws_path}'
+            )
 
     # ==================== 反向 WS (客户端) ====================
 
@@ -123,8 +153,8 @@ class OneBotWSServer:
             if url:
                 task = asyncio.create_task(self._reverse_ws_loop(url, appid))
                 self._reverse_tasks.append(task)
-                tag = f"{url} (appid={appid})" if appid else url
-                self._log.info(f"反向 WS 连接任务已创建: {tag}")
+                tag = f'{url} (appid={appid})' if appid else url
+                self._log.info(f'反向 WS 连接任务已创建: {tag}')
 
     async def _reverse_ws_loop(self, url: str, appid: str = ''):
         """反向 WS 持续连接循环 (断线重连)"""
@@ -137,25 +167,34 @@ class OneBotWSServer:
             headers['X-Self-ID'] = str(self_qq)
             headers['X-Client-Role'] = 'Universal'
             try:
-                self._log.info(f"反向 WS 正在连接: {url}")
-                async with self._reverse_session.ws_connect(url, headers=headers, ssl=False) as ws:
-                    wrapper = _WSWrapper(ws, remote=url, is_client=True, appid=appid, self_qq=self_qq)
+                self._log.info(f'反向 WS 正在连接: {url}')
+                async with self._reverse_session.ws_connect(
+                    url, headers=headers, ssl=False
+                ) as ws:
+                    wrapper = _WSWrapper(
+                        ws, remote=url, is_client=True, appid=appid, self_qq=self_qq
+                    )
                     self._clients.add(wrapper)
-                    self._log.info(f"反向 WS 已连接: {url} (self_qq={self_qq}, 当前 {len(self._clients)} 个)")
+                    self._log.info(
+                        f'反向 WS 已连接: {url} (self_qq={self_qq}, 当前 {len(self._clients)} 个)'
+                    )
                     await wrapper.send_str(self._lifecycle_json(self_qq))
 
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             await self._handle_message(wrapper, msg.data)
-                        elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                        elif msg.type in (
+                            aiohttp.WSMsgType.CLOSED,
+                            aiohttp.WSMsgType.ERROR,
+                        ):
                             break
 
                     self._clients.discard(wrapper)
-                    self._log.warning(f"反向 WS 断开: {url}")
+                    self._log.warning(f'反向 WS 断开: {url}')
             except asyncio.CancelledError:
                 return
             except Exception as e:
-                self._log.warning(f"反向 WS 连接失败 [{url}]: {e}")
+                self._log.warning(f'反向 WS 连接失败 [{url}]: {e}')
 
             await asyncio.sleep(self._reconnect_interval)
 
@@ -178,10 +217,8 @@ class OneBotWSServer:
             self._reverse_session = None
 
         for ws in list(self._clients):
-            try:
+            with contextlib.suppress(Exception):
                 await ws.close()
-            except Exception:
-                pass
         self._clients.clear()
 
     async def broadcast(self, event: dict, appid: str = ''):
@@ -190,7 +227,7 @@ class OneBotWSServer:
             return
         data = json.dumps(event, ensure_ascii=False)
         if self._debug and event.get('post_type') != 'meta_event':
-            self._log.info(f"[WS→] {data}")
+            self._log.info(f'[WS→] {data}')
         dead = set()
         for ws in list(self._clients):
             if ws.appid and appid and ws.appid != appid:
@@ -210,7 +247,7 @@ class OneBotWSServer:
             query_token = request.query.get('access_token', '')
             valid = {f'Bearer {self._token}', f'Token {self._token}'}
             if auth not in valid and query_token != self._token:
-                self._log.warning(f"正向 WS 鉴权失败: {request.remote}")
+                self._log.warning(f'正向 WS 鉴权失败: {request.remote}')
                 return web.Response(status=401, text='Unauthorized')
 
         ws = web.WebSocketResponse()
@@ -219,7 +256,9 @@ class OneBotWSServer:
         self_qq = self._default_qq
         wrapper = _WSWrapper(ws, remote=str(request.remote), self_qq=self_qq)
         self._clients.add(wrapper)
-        self._log.info(f"正向 WS 客户端已连接: {request.remote} (当前 {len(self._clients)} 个)")
+        self._log.info(
+            f'正向 WS 客户端已连接: {request.remote} (当前 {len(self._clients)} 个)'
+        )
         await wrapper.send_str(self._lifecycle_json(self_qq))
 
         try:
@@ -227,12 +266,14 @@ class OneBotWSServer:
                 if msg.type == web.WSMsgType.TEXT:
                     await self._handle_message(wrapper, msg.data)
                 elif msg.type == web.WSMsgType.ERROR:
-                    self._log.warning(f"正向 WS 错误: {ws.exception()}")
+                    self._log.warning(f'正向 WS 错误: {ws.exception()}')
         except Exception as e:
-            self._log.warning(f"正向 WS 连接异常: {e}")
+            self._log.warning(f'正向 WS 连接异常: {e}')
         finally:
             self._clients.discard(wrapper)
-            self._log.info(f"正向 WS 客户端已断开: {request.remote} (剩余 {len(self._clients)} 个)")
+            self._log.info(
+                f'正向 WS 客户端已断开: {request.remote} (剩余 {len(self._clients)} 个)'
+            )
 
         return ws
 
@@ -243,7 +284,7 @@ class OneBotWSServer:
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
-            self._log.warning(f"无法解析的 WS 消息: {raw[:200]}")
+            self._log.warning(f'无法解析的 WS 消息: {raw[:200]}')
             return
 
         action = data.get('action', '')
@@ -254,26 +295,29 @@ class OneBotWSServer:
             return
 
         if self._debug:
-            self._log.info(f"[WS←] action={action} params={_mask_b64(json.dumps(params, ensure_ascii=False))}")
+            self._log.info(
+                f'[WS←] action={action} params={_mask_b64(json.dumps(params, ensure_ascii=False))}'
+            )
 
         try:
             result = await self._on_action(action, params, echo, ws.appid)
         except Exception as e:
             self._log.error(f"处理 action '{action}' 异常: {e}")
             result = {
-                'status': 'failed', 'retcode': -1,
-                'data': None, 'msg': str(e), 'wording': str(e),
+                'status': 'failed',
+                'retcode': -1,
+                'data': None,
+                'msg': str(e),
+                'wording': str(e),
             }
             if echo is not None:
                 result['echo'] = echo
 
         resp = json.dumps(result, ensure_ascii=False)
         if self._debug:
-            self._log.info(f"[WS→] resp={resp}")
-        try:
+            self._log.info(f'[WS→] resp={resp}')
+        with contextlib.suppress(Exception):
             await ws.send_str(resp)
-        except Exception:
-            pass
 
     # ==================== 心跳 ====================
 
@@ -283,14 +327,16 @@ class OneBotWSServer:
             await asyncio.sleep(self._hb_interval)
             dead = []
             for ws in list(self._clients):
-                hb = json.dumps({
-                    'time': int(time.time()),
-                    'self_id': ws.self_qq or self._default_qq,
-                    'post_type': 'meta_event',
-                    'meta_event_type': 'heartbeat',
-                    'status': {'online': True, 'good': True},
-                    'interval': self._hb_interval * 1000,
-                })
+                hb = json.dumps(
+                    {
+                        'time': int(time.time()),
+                        'self_id': ws.self_qq or self._default_qq,
+                        'post_type': 'meta_event',
+                        'meta_event_type': 'heartbeat',
+                        'status': {'online': True, 'good': True},
+                        'interval': self._hb_interval * 1000,
+                    }
+                )
                 try:
                     await ws.send_str(hb)
                 except Exception:

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """数据存储引擎 — MySQL + Redis 统一管理模块
 
 通过配置文件独立开关两个数据库。
@@ -30,9 +29,9 @@ __module_meta__ = {
     'author': 'ElainaBot',
 }
 
-from core.base.logger import get_logger, EXTENSION
+from core.base.logger import EXTENSION, get_logger
 
-log = get_logger(EXTENSION, "数据存储引擎")
+log = get_logger(EXTENSION, '数据存储引擎')
 
 _instance = None
 
@@ -49,12 +48,17 @@ _COMMENTS = {
 
 # ==================== 模块入口 ====================
 
+
 async def setup(ctx):
     global _instance
     cfg = ctx.ensure_config(_DEFAULTS, comments=_COMMENTS)
 
-    from modules.datastore.mysql.main import MySQLPool, _DEFAULTS as MYSQL_DEFAULTS, _COMMENTS as MYSQL_COMMENTS
-    from modules.datastore.redis.main import RedisPool, _DEFAULTS as REDIS_DEFAULTS, _COMMENTS as REDIS_COMMENTS
+    from modules.datastore.mysql.main import _COMMENTS as MYSQL_COMMENTS
+    from modules.datastore.mysql.main import _DEFAULTS as MYSQL_DEFAULTS
+    from modules.datastore.mysql.main import MySQLPool
+    from modules.datastore.redis.main import _COMMENTS as REDIS_COMMENTS
+    from modules.datastore.redis.main import _DEFAULTS as REDIS_DEFAULTS
+    from modules.datastore.redis.main import RedisPool
 
     mysql_inst = None
     redis_inst = None
@@ -74,20 +78,20 @@ async def setup(ctx):
 
     parts = []
     if mysql_inst and mysql_inst.is_available():
-        parts.append(f"MySQL ✅ [{mysql_cfg['host']}:{mysql_cfg['port']}/{mysql_cfg['database']}]")
+        parts.append(f'MySQL ✅ [{mysql_cfg["host"]}:{mysql_cfg["port"]}/{mysql_cfg["database"]}]')
     elif cfg.get('mysql_enabled'):
-        parts.append("MySQL ❌")
+        parts.append('MySQL ❌')
     else:
-        parts.append("MySQL 关闭")
+        parts.append('MySQL 关闭')
 
     if redis_inst and redis_inst.is_available():
-        parts.append(f"Redis ✅ [{redis_cfg['host']}:{redis_cfg['port']}/{redis_cfg['db']}]")
+        parts.append(f'Redis ✅ [{redis_cfg["host"]}:{redis_cfg["port"]}/{redis_cfg["db"]}]')
     elif cfg.get('redis_enabled'):
-        parts.append("Redis ❌")
+        parts.append('Redis ❌')
     else:
-        parts.append("Redis 关闭")
+        parts.append('Redis 关闭')
 
-    log.info(f"{' | '.join(parts)}")
+    log.info(f'{" | ".join(parts)}')
     return _instance
 
 
@@ -99,6 +103,7 @@ async def teardown():
 
 
 # ==================== DataStore ====================
+
 
 class DataStore:
     """统一数据存储 — 通过 .mysql / .redis 属性访问子组件"""

@@ -1,9 +1,8 @@
 """唤醒系统服务 (WakeupMixin)"""
 
-import sqlite3
 import asyncio
+import sqlite3
 from datetime import datetime
-
 
 # 唤醒阶段阈值: (最大不活跃天数, 目标阶段)
 _STAGE_THRESHOLDS = ((0, 1), (3, 2), (7, 3), (30, 4))
@@ -37,17 +36,16 @@ class WakeupMixin:
         now_str = now.strftime('%Y-%m-%d %H:%M:%S')
         conn, lock = self._wakeup_locked()
         with lock:
-            row = conn.execute(
-                "SELECT last_msg_date FROM log WHERE openid=?", (openid,)).fetchone()
+            row = conn.execute('SELECT last_msg_date FROM log WHERE openid=?', (openid,)).fetchone()
             if row and row[0] == today:
-                conn.execute(
-                    "UPDATE log SET updated_at=? WHERE openid=?", (now_str, openid))
+                conn.execute('UPDATE log SET updated_at=? WHERE openid=?', (now_str, openid))
                 conn.commit()
                 return
             conn.execute(
-                "INSERT INTO log (openid, last_msg_date, wakeup_stage, updated_at) VALUES (?,?,0,?) "
-                "ON CONFLICT(openid) DO UPDATE SET last_msg_date=?, wakeup_stage=0, updated_at=?",
-                (openid, today, now_str, today, now_str))
+                'INSERT INTO log (openid, last_msg_date, wakeup_stage, updated_at) VALUES (?,?,0,?) '
+                'ON CONFLICT(openid) DO UPDATE SET last_msg_date=?, wakeup_stage=0, updated_at=?',
+                (openid, today, now_str, today, now_str),
+            )
             conn.commit()
 
     async def wakeup_can_send(self, openid):
@@ -60,8 +58,9 @@ class WakeupMixin:
         with lock:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT last_msg_date, wakeup_stage, last_wakeup_date FROM log WHERE openid=?",
-                (openid,)).fetchone()
+                'SELECT last_msg_date, wakeup_stage, last_wakeup_date FROM log WHERE openid=?',
+                (openid,),
+            ).fetchone()
             conn.row_factory = None
         if not row:
             return (False, 0, -1)
@@ -86,8 +85,9 @@ class WakeupMixin:
         conn, lock = self._wakeup_locked()
         with lock:
             conn.execute(
-                "UPDATE log SET wakeup_stage=?, last_wakeup_date=?, updated_at=? WHERE openid=?",
-                (stage, today, today, openid))
+                'UPDATE log SET wakeup_stage=?, last_wakeup_date=?, updated_at=? WHERE openid=?',
+                (stage, today, today, openid),
+            )
             conn.commit()
 
     async def wakeup_get_users(self, target_stage=None):
@@ -99,7 +99,7 @@ class WakeupMixin:
         conn, lock = self._wakeup_locked()
         with lock:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT openid, last_msg_date, wakeup_stage, last_wakeup_date FROM log").fetchall()
+            rows = conn.execute('SELECT openid, last_msg_date, wakeup_stage, last_wakeup_date FROM log').fetchall()
             conn.row_factory = None
         today = datetime.now().date()
         today_str = today.strftime('%Y-%m-%d')

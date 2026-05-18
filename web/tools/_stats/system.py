@@ -1,14 +1,15 @@
 """系统信息采集"""
 
-import os
+import contextlib
 import gc
-import time
-import platform
 import logging
+import os
+import platform
+import time
+from datetime import datetime
 
 import psutil
 from aiohttp import web
-from datetime import datetime
 
 log = logging.getLogger('ElainaBot.web.sysinfo')
 
@@ -28,6 +29,7 @@ def set_context(bot_manager, start_time=None):
 
 _cpu_model_cache = None
 
+
 def _cpu_model():
     global _cpu_model_cache
     if _cpu_model_cache:
@@ -36,12 +38,15 @@ def _cpu_model():
     try:
         if _IS_WINDOWS:
             import winreg
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
-                                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
-            model = winreg.QueryValueEx(key, "ProcessorNameString")[0].strip()
+
+            key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r'HARDWARE\DESCRIPTION\System\CentralProcessor\0',
+            )
+            model = winreg.QueryValueEx(key, 'ProcessorNameString')[0].strip()
             winreg.CloseKey(key)
         else:
-            with open('/proc/cpuinfo', 'r') as f:
+            with open('/proc/cpuinfo') as f:
                 for line in f:
                     if line.startswith('model name'):
                         model = line.split(':', 1)[1].strip()
@@ -49,10 +54,8 @@ def _cpu_model():
     except Exception:
         pass
     if not model:
-        try:
+        with contextlib.suppress(Exception):
             model = platform.processor() or ''
-        except Exception:
-            pass
     if not model:
         cores = psutil.cpu_count(logical=True)
         model = f'{cores} 核处理器'
@@ -70,8 +73,8 @@ def get_system_info() -> dict:
 
     mem = proc.memory_info()
     sys_mem = psutil.virtual_memory()
-    rss_mb = mem.rss / (1024 ** 2)
-    mem_total_mb = sys_mem.total / (1024 ** 2)
+    rss_mb = mem.rss / (1024**2)
+    mem_total_mb = sys_mem.total / (1024**2)
 
     try:
         cpu_cores = psutil.cpu_count(logical=True)
@@ -100,9 +103,8 @@ def get_system_info() -> dict:
             try:
                 rows = inst.log_service.query(
                     'message',
-                    "SELECT COUNT(*) as cnt, COUNT(DISTINCT user_id) as users, "
-                    "COUNT(DISTINCT group_id) as groups "
-                    "FROM log WHERE user_id != ''")
+                    "SELECT COUNT(*) as cnt, COUNT(DISTINCT user_id) as users, COUNT(DISTINCT group_id) as groups FROM log WHERE user_id != ''",
+                )
                 if rows:
                     today_messages += rows[0].get('cnt', 0)
                     today_active += rows[0].get('users', 0)
@@ -110,13 +112,13 @@ def get_system_info() -> dict:
             except Exception:
                 pass
             try:
-                r = inst.log_service.query_data("SELECT COUNT(*) as c FROM users")
+                r = inst.log_service.query_data('SELECT COUNT(*) as c FROM users')
                 if r:
                     total_users += r[0].get('c', 0)
             except Exception:
                 pass
             try:
-                r = inst.log_service.query_data("SELECT COUNT(*) as c FROM groups_users")
+                r = inst.log_service.query_data('SELECT COUNT(*) as c FROM groups_users')
                 if r:
                     total_groups += r[0].get('c', 0)
             except Exception:
@@ -128,13 +130,15 @@ def get_system_info() -> dict:
         'cpu_cores': cpu_cores,
         'cpu_model': _cpu_model(),
         'memory_percent': round(sys_mem.percent, 1),
-        'memory_used': round(sys_mem.used / (1024 ** 2), 1),
+        'memory_used': round(sys_mem.used / (1024**2), 1),
         'memory_total': round(mem_total_mb, 1),
         'framework_memory_percent': round((rss_mb / mem_total_mb) * 100 if mem_total_mb else 0, 1),
         'framework_memory_total': round(rss_mb, 1),
         'disk_info': {
-            'total': disk.total, 'used': disk.used,
-            'free': disk.free, 'percent': disk.percent,
+            'total': disk.total,
+            'used': disk.used,
+            'free': disk.free,
+            'percent': disk.percent,
         },
         'uptime': uptime,
         'system_uptime': sys_uptime,
@@ -154,5 +158,5 @@ async def handle_system_info(request: web.Request):
     try:
         return web.json_response(get_system_info())
     except Exception as e:
-        log.error(f"获取系统信息失败: {e}")
+        log.error(f'获取系统信息失败: {e}')
         return web.json_response({'error': str(e)}, status=500)

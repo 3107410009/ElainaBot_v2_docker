@@ -1,15 +1,20 @@
 """Web 面板自定义页面注册表"""
+
 from __future__ import annotations
 
 _registry: dict = {}  # {key: page_info}
 
 
-def register_page(key: str, label: str, *,
-                  source: str = 'plugin',
-                  source_name: str = '',
-                  html: str = '',
-                  html_file: str = '',
-                  icon: str = ''):
+def register_page(
+    key: str,
+    label: str,
+    *,
+    source: str = 'plugin',
+    source_name: str = '',
+    html: str = '',
+    html_file: str = '',
+    icon: str = '',
+):
     """注册自定义 Web 面板页面"""
     _registry[key] = {
         'key': key,
@@ -29,10 +34,7 @@ def unregister_page(key: str):
 
 def get_pages() -> list:
     """获取所有已注册页面 (不含 html 内容)"""
-    return [
-        {k: v for k, v in p.items() if k not in ('html', 'html_file')}
-        for p in _registry.values()
-    ]
+    return [{k: v for k, v in p.items() if k not in ('html', 'html_file')} for p in _registry.values()]
 
 
 def get_page_html(key: str) -> str | None:
@@ -46,7 +48,7 @@ def get_page_html(key: str) -> str | None:
     if not path:
         return '<p>空页面</p>'
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             return f.read()
     except Exception:
         return '<p style="color:red">页面文件加载失败</p>'

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """Playwright 异步渲染模块
 
 按需启动浏览器, 空闲自动关闭, 通过信号量控制并发页面数, 供所有插件共享。
@@ -31,13 +30,14 @@ __module_meta__ = {
 }
 
 import asyncio
-import time
+import contextlib
 import os
+import time
 from contextlib import asynccontextmanager
 
-from core.base.logger import get_logger, EXTENSION
+from core.base.logger import EXTENSION, get_logger
 
-log = get_logger(EXTENSION, "Playwright")
+log = get_logger(EXTENSION, 'Playwright')
 
 _instance = None
 
@@ -80,11 +80,12 @@ _COMMENTS = {
 
 # ==================== 模块入口 ====================
 
+
 async def setup(ctx):
     global _instance
     cfg = ctx.ensure_config(_DEFAULTS, comments=_COMMENTS)
     _instance = PlaywrightRenderer(cfg)
-    log.info(f"✅ Playwright 就绪 [{cfg['browser_type']}] 首次调用时启动浏览器")
+    log.info(f'✅ Playwright 就绪 [{cfg["browser_type"]}] 首次调用时启动浏览器')
     return _instance
 
 
@@ -97,13 +98,21 @@ async def teardown():
 
 # ==================== PlaywrightRenderer ====================
 
+
 class PlaywrightRenderer:
     """异步 Playwright 浏览器渲染器 (按需启动, 空闲关闭)"""
 
     __slots__ = (
-        '_cfg', '_pw', '_browser', '_semaphore',
-        '_lock', '_active_pages',
-        '_last_release', '_cleanup_task', '_closed', '_last_error',
+        '_cfg',
+        '_pw',
+        '_browser',
+        '_semaphore',
+        '_lock',
+        '_active_pages',
+        '_last_release',
+        '_cleanup_task',
+        '_closed',
+        '_last_error',
     )
 
     def __init__(self, cfg):
@@ -127,29 +136,23 @@ class PlaywrightRenderer:
             self._cleanup_task.cancel()
         await self._close_browser()
         if self._pw:
-            try:
+            with contextlib.suppress(Exception):
                 await self._pw.stop()
-            except Exception:
-                pass
             self._pw = None
 
     async def _close_browser(self):
         """关闭浏览器进程"""
         if self._browser:
-            try:
+            with contextlib.suppress(Exception):
                 await self._browser.close()
-            except Exception:
-                pass
             self._browser = None
 
     async def _shutdown_all(self):
         """关闭浏览器 + Playwright 进程 (用完即关模式)"""
         await self._close_browser()
         if self._pw:
-            try:
+            with contextlib.suppress(Exception):
                 await self._pw.stop()
-            except Exception:
-                pass
             self._pw = None
 
     async def _ensure_browser(self):
@@ -160,40 +163,41 @@ class PlaywrightRenderer:
             if self._browser and self._browser.is_connected():
                 return True
             restarting = self._browser is not None
-            log.info("浏览器已断开, 正在重启..." if restarting else "正在按需启动浏览器...")
+            log.info('浏览器已断开, 正在重启...' if restarting else '正在按需启动浏览器...')
             try:
                 if not self._pw:
                     from playwright.async_api import async_playwright
+
                     self._pw = await async_playwright().start()
-                launcher = getattr(self._pw, self._cfg.get('browser_type', 'chromium'), self._pw.chromium)
+                launcher = getattr(
+                    self._pw,
+                    self._cfg.get('browser_type', 'chromium'),
+                    self._pw.chromium,
+                )
                 self._browser = await launcher.launch(
                     headless=self._cfg.get('headless', True),
                     args=self._cfg.get('launch_args', []),
                 )
-                log.info("✅ 浏览器已启动" if not restarting else "✅ 浏览器已重启")
-                if not self._cfg.get('close_after_use', False):
-                    if not self._cleanup_task or self._cleanup_task.done():
-                        self._cleanup_task = asyncio.create_task(self._idle_cleanup_loop())
+                log.info('✅ 浏览器已启动' if not restarting else '✅ 浏览器已重启')
+                if not self._cfg.get('close_after_use', False) and (not self._cleanup_task or self._cleanup_task.done()):
+                    self._cleanup_task = asyncio.create_task(self._idle_cleanup_loop())
                 return True
             except Exception as e:
                 self._last_error = str(e)
-                log.error(f"浏览器启动失败: {e}", exc_info=True)
+                log.error(f'浏览器启动失败: {e}', exc_info=True)
                 return False
 
     async def _idle_cleanup_loop(self):
-        """定时检查并关闭空闲浏览器 + Playwright 进程"""
+        """定时检查并关闭空闲浏览器"""
         timeout = self._cfg.get('idle_timeout', 300)
         while True:
             try:
                 await asyncio.sleep(30)
-                if (self._browser
-                        and self._active_pages == 0
-                        and self._last_release > 0
-                        and (time.monotonic() - self._last_release) > timeout):
+                if self._browser and self._active_pages == 0 and self._last_release > 0 and (time.monotonic() - self._last_release) > timeout:
                     async with self._lock:
                         if self._active_pages == 0 and self._browser:
-                            log.info(f"浏览器空闲超过 {timeout}s, 自动关闭")
-                            await self._shutdown_all()
+                            log.info(f'浏览器空闲超过 {timeout}s, 自动关闭')
+                            await self._close_browser()
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -211,65 +215,61 @@ class PlaywrightRenderer:
                 data = await page.screenshot()
         """
         if self._closed:
-            raise RuntimeError("Playwright 已关闭")
+            raise RuntimeError('Playwright 已关闭')
 
         async with self._semaphore:
             if not await self._ensure_browser():
-                raise RuntimeError(f"Playwright 浏览器不可用: {self._last_error or '未知原因'}")
+                raise RuntimeError(f'Playwright 浏览器不可用: {self._last_error or "未知原因"}')
 
             self._active_pages += 1
-            vw = (viewport[0] if viewport else self._cfg.get('default_viewport_width', 1280))
-            vh = (viewport[1] if viewport else self._cfg.get('default_viewport_height', 720))
+            vw = viewport[0] if viewport else self._cfg.get('default_viewport_width', 1280)
+            vh = viewport[1] if viewport else self._cfg.get('default_viewport_height', 720)
 
-            context = None
             try:
-                context = await self._browser.new_context(
+                page = await self._browser.new_page(
                     viewport={'width': vw, 'height': vh},
                 )
-                page = await context.new_page()
             except Exception as e:
-                if "Connection closed" in str(e) or not (self._browser and self._browser.is_connected()):
-                    log.warning(f"浏览器连接已断开, 尝试重启: {e}")
+                if 'Connection closed' in str(e) or not (self._browser and self._browser.is_connected()):
+                    log.warning(f'浏览器连接已断开, 尝试重启: {e}')
                     await self._close_browser()
                     if not await self._ensure_browser():
                         self._active_pages -= 1
-                        raise RuntimeError(f"Playwright 浏览器重启失败: {self._last_error or '未知原因'}")
-                    context = await self._browser.new_context(
+                        raise RuntimeError(f'Playwright 浏览器重启失败: {self._last_error or "未知原因"}') from e
+                    page = await self._browser.new_page(
                         viewport={'width': vw, 'height': vh},
                     )
-                    page = await context.new_page()
                 else:
-                    if context:
-                        try: await context.close()
-                        except Exception: pass
                     self._active_pages -= 1
                     raise
             page.set_default_timeout(self._cfg.get('default_timeout', 30000))
             try:
                 yield page
             finally:
-                try:
-                    await context.close()
-                except Exception:
-                    pass
+                with contextlib.suppress(Exception):
+                    await page.close()
                 self._active_pages -= 1
                 if self._active_pages <= 0:
                     self._active_pages = 0
                     self._last_release = time.monotonic()
                     if self._cfg.get('close_after_use', False):
-                        await self._close_browser()
+                        await self._shutdown_all()
                     elif self._cfg.get('idle_timeout', 300) == 0:
                         await self._close_browser()
 
-    async def screenshot_url(self, url, *,
-                             viewport=None,
-                             full_page=True,
-                             image_format=None,
-                             quality=None,
-                             wait_until='networkidle',
-                             wait_ms=0,
-                             selector=None,
-                             timeout=None):
+    async def screenshot_url(
+        self,
+        url,
+        *,
+        viewport=None,
+        full_page=True,
+        image_format=None,
+        quality=None,
+        wait_until='networkidle',
+        wait_ms=0,
+        selector=None,
+        timeout=None,
+    ):
         """截图指定 URL, 返回图片 bytes
 
         参数:
@@ -293,14 +293,18 @@ class PlaywrightRenderer:
                 await page.wait_for_timeout(wait_ms)
             return await self._take_screenshot(page, full_page, fmt, q, selector)
 
-    async def screenshot_html(self, html, *,
-                              viewport=None,
-                              full_page=True,
-                              image_format=None,
-                              quality=None,
-                              wait_ms=0,
-                              selector=None,
-                              base_url=None):
+    async def screenshot_html(
+        self,
+        html,
+        *,
+        viewport=None,
+        full_page=True,
+        image_format=None,
+        quality=None,
+        wait_ms=0,
+        selector=None,
+        base_url=None,
+    ):
         """截图 HTML 字符串, 返回图片 bytes
 
         参数:
@@ -330,15 +334,19 @@ class PlaywrightRenderer:
 
         参数同 screenshot_url, file_path 为本地文件绝对路径
         """
-        url = f"file:///{os.path.abspath(file_path).replace(os.sep, '/')}"
+        url = f'file:///{os.path.abspath(file_path).replace(os.sep, "/")}'
         return await self.screenshot_url(url, **kwargs)
 
-    async def pdf_url(self, url, *,
-                      viewport=None,
-                      wait_until='networkidle',
-                      wait_ms=0,
-                      timeout=None,
-                      **pdf_kwargs):
+    async def pdf_url(
+        self,
+        url,
+        *,
+        viewport=None,
+        wait_until='networkidle',
+        wait_ms=0,
+        timeout=None,
+        **pdf_kwargs,
+    ):
         """将 URL 渲染为 PDF, 返回 bytes (仅 Chromium)"""
         to = timeout or self._cfg.get('default_timeout', 30000)
         async with self.new_page(viewport=viewport) as page:

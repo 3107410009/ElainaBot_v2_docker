@@ -1,18 +1,18 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """Token 管理器 — 异步, 每个机器人独立维护 access_token, 自动续期"""
 
-import time
 import asyncio
 import logging
+import time
+
 from core.network.http_compat import AsyncHttpClient
 
 logger = logging.getLogger('ElainaBot.access')
 
-_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
-_API_BASE = "https://api.sgroup.qq.com"
+_TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
+_API_BASE = 'https://api.sgroup.qq.com'
 
-_REFRESH_BUFFER = 60   # 提前刷新秒数
+_REFRESH_BUFFER = 60  # 提前刷新秒数
 _MAX_RETRIES = 3
 _RETRY_DELAYS = (3, 6, 12)
 
@@ -21,14 +21,25 @@ class TokenManager:
     """单个机器人的 Token 管理器 (异步)"""
 
     __slots__ = (
-        'appid', 'secret',
-        '_token', '_expires_at', '_lock',
-        '_client', '_refresh_task', '_closed',
+        'appid',
+        'secret',
+        '_token',
+        '_expires_at',
+        '_lock',
+        '_client',
+        '_refresh_task',
+        '_closed',
     )
 
     def __init__(self, appid, secret):
         self.appid = str(appid)
         self.secret = str(secret)
+        # 提前校验: secret 为空或含未解析占位符时立即报错
+        if not self.secret or '${' in self.secret:
+            raise ValueError(
+                f'Bot secret 无效 (appid={self.appid}): '
+                f'{"未设置 (请通过 Web 面板配置 appid 和 secret)" if not self.secret else f"含未解析的占位符: {self.secret}"}'
+            )
         self._token = None
         self._expires_at = 0.0
         self._lock = asyncio.Lock()
@@ -43,7 +54,7 @@ class TokenManager:
     @property
     def authorization(self):
         """返回 Authorization 头值"""
-        return f"QQBot {self._token}" if self._token else ""
+        return f'QQBot {self._token}' if self._token else ''
 
     async def get_token(self):
         """获取当前有效 token, 过期自动刷新"""
@@ -76,7 +87,7 @@ class TokenManager:
     _ensure_client = get_client  # 内部兼容
 
     async def _refresh(self):
-        payload = {"appId": self.appid, "clientSecret": self.secret}
+        payload = {'appId': self.appid, 'clientSecret': self.secret}
         client = await self._ensure_client()
         last_error = None
         for i in range(_MAX_RETRIES):
@@ -86,15 +97,15 @@ class TokenManager:
                 if resp.status_code == 200 and 'access_token' in data:
                     self._token = data['access_token']
                     self._expires_at = time.time() + int(data.get('expires_in', 7200))
-                    logger.info(f"[{self.appid}] Token 已刷新, 有效期 {data.get('expires_in', '?')}s")
+                    logger.info(f'[{self.appid}] Token 已刷新, 有效期 {data.get("expires_in", "?")}s')
                     return
-                last_error = f"HTTP {resp.status_code}: {data}"
+                last_error = f'HTTP {resp.status_code}: {data}'
             except Exception as e:
                 last_error = str(e)
             if i < _MAX_RETRIES - 1:
                 await asyncio.sleep(_RETRY_DELAYS[i])
-        logger.error(f"[{self.appid}] Token 获取失败: {last_error}")
-        raise RuntimeError(f"Token 获取失败 (appid={self.appid}): {last_error}")
+        logger.error(f'[{self.appid}] Token 获取失败: {last_error}')
+        raise RuntimeError(f'Token 获取失败 (appid={self.appid}): {last_error}')
 
     async def start_auto_refresh(self):
         """启动后台自动刷新"""
@@ -113,7 +124,7 @@ class TokenManager:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.warning(f"[{self.appid}] 自动刷新异常: {e}")
+                logger.warning(f'[{self.appid}] 自动刷新异常: {e}')
                 await asyncio.sleep(30)
 
     async def close(self):
