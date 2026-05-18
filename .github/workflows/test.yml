@@ -228,40 +228,58 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check all gates
+      - name: Gate check
         env:
           LINT: ${{ needs.lint.result }}
           UNIT: ${{ needs.unit-test.result }}
           INTEG: ${{ needs.integration-test.result }}
           COV: ${{ needs.coverage.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           failed=false
+          failures=""
 
-          fail_check() {
+          check() {
             local name="$1" result="$2"
             case "$result" in
               success)
                 echo "  ✅ $name" ;;
               skipped)
-                echo "  ⏭️  $name (skipped)" ;;
+                echo "  ⏭️  $name (被上游失败跳过)" ;;
               *)
-                echo "  ❌ $name — FAILED (result: $result)"
-                failed=true ;;
+                echo "  ❌ $name — FAILED"
+                failed=true
+                failures="${failures}  - ${name}"$'\n' ;;
             esac
           }
 
           echo "============================================"
           echo "  CI Gate Check"
           echo "============================================"
-          fail_check "lint"              "$LINT"
-          fail_check "unit-test"         "$UNIT"
-          fail_check "integration-test"  "$INTEG"
-          fail_check "coverage"          "$COV"
+          check "lint"              "$LINT"
+          check "unit-test"         "$UNIT"
+          check "integration-test"  "$INTEG"
+          check "coverage"          "$COV"
           echo "============================================"
 
-          if [ "$failed" = "true" ]; then
+          if [ -n "$failed" ]; then
             echo ""
-            echo "⛔ GATE FAILED — 门禁未通过, 禁止合并"
+            echo "╔══════════════════════════════════════════╗"
+            echo "║  ⛔ GATE FAILED — 门禁未通过           ║"
+            echo "╠══════════════════════════════════════════╣"
+            echo "║  失败 Job:                              ║"
+            echo "$failures" | while IFS= read -r line; do
+              [ -n "$line" ] && printf "║  %-40s║\n" "$line"
+            done
+            echo "╠══════════════════════════════════════════╣"
+            echo "║  👉 请点击左侧边栏中红色 ❌ 的 Job      ║"
+            echo "║     展开即可看到具体报错行和堆栈       ║"
+            echo "╠══════════════════════════════════════════╣"
+            echo "║  完整运行日志:                          ║"
+            echo "║  $RUN_URL  ║"
+            echo "╚══════════════════════════════════════════╝"
+            echo ""
+            echo "::error::GATE FAILED — lint/unit-test/integration-test/coverage 任一未通过"
             exit 1
           fi
 
