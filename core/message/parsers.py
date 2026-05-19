@@ -5,6 +5,8 @@ import html
 import json
 import re
 
+from core.message import bot_openid
+
 # 内容清洗: QQ 表情标签
 _FACE_PATTERN = re.compile(r'<faceType=\d+,faceId="[^"]+",ext="[^"]+">')
 
@@ -84,20 +86,28 @@ def parse_group_message(event, d):
     """群聊消息解析"""
     parse_message_generic(event, d)
     mentions = d.get('mentions')
-    if isinstance(mentions, list):
-        event.mentions = mentions
-        for mention in mentions:
-            if isinstance(mention, dict) is False:
-                continue
-            is_you = mention.get('is_you')
-            if is_you is True:
-                event.is_at_self = True
-            if mention.get('bot') is True and not is_you:
-                event.is_at_other_bot = True
-            if not mention.get('bot') and not is_you and mention.get('scope') != 'all':
-                event.is_at_other_user = True
-            if mention.get('scope') == 'all':
-                event.is_at_all = True
+    if not isinstance(mentions, list):
+        return
+    event.mentions = mentions
+    is_full = event.event_type == 'GROUP_MESSAGE_CREATE'
+    for mention in mentions:
+        if isinstance(mention, dict) is False:
+            continue
+        is_you = mention.get('is_you')
+        if is_you is True:
+            event.is_at_self = True
+            if is_full:
+                mid = mention.get('id')
+                if mid and event.appid:
+                    bot_openid.add(event.appid, mid)
+        if mention.get('bot') is True and not is_you:
+            event.is_at_other_bot = True
+        if not mention.get('bot') and not is_you and mention.get('scope') != 'all':
+            event.is_at_other_user = True
+        if mention.get('scope') == 'all':
+            event.is_at_all = True
+    if is_full and '<@' in event.content and event.appid:
+        event.content = bot_openid.strip_self_at(event.appid, event.content)
 
 
 def parse_direct_message(event, d):

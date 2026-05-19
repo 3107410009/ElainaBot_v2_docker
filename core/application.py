@@ -79,6 +79,11 @@ class Application(EventHandlerMixin):
         return self._http_server.app if self._http_server else None
 
     @property
+    def _app(self):
+        """向后兼容: 老插件用 _bot_manager_ref._app 访问 aiohttp web.Application"""
+        return self.web_app
+
+    @property
     def router(self):
         """向后兼容: _bot_manager_ref._app.router"""
         app = self.web_app
@@ -104,6 +109,12 @@ class Application(EventHandlerMixin):
     async def start(self):
         global _app
         _app = self
+
+        try:
+            from core.bot import manager as _bot_manager_module
+            _bot_manager_module._bot_manager_ref = self
+        except Exception:
+            pass
 
         # 1) 初始化配置
         cfg.init(self._path('config'))
@@ -173,10 +184,13 @@ class Application(EventHandlerMixin):
         self._dau_service = DAUService(log_base)
         await self._dau_service.start()
 
-        # 8) HTTP 服务器
+        # 8) 挂载 Web 面板 (bot_registry 就绪后, 才能正确绑定 sender 回调)
+        self._http_server.mount_web_panel()
+
+        # 9) HTTP 服务器
         await self._http_server.start()
 
-        # 9) 后台服务
+        # 10) 后台服务
         self._config_watcher = ConfigWatcherService(interval=5.0)
         self._media_cleanup = MediaCleanupService(media_dir=self._media_dir, max_age_days=3, interval=3600)
         self._restart_scheduler = RestartScheduler(on_restart=self._trigger_restart)
@@ -189,6 +203,7 @@ class Application(EventHandlerMixin):
         self._push_web_log('framework', {'source': '启动器', 'content': msg})
 
         self._stop_event = asyncio.Event()
+        self._install_signal_handlers()
         try:
             await self._stop_event.wait()
         except (KeyboardInterrupt, asyncio.CancelledError):
@@ -196,6 +211,25 @@ class Application(EventHandlerMixin):
         finally:
             await self.shutdown()
         return self._restart_requested
+
+    def _install_signal_handlers(self):
+        """注册 SIGTERM/SIGINT 信号处理器, 保证宝塔/systemd/Docker 关闭时优雅退出"""
+        import signal
+        loop = asyncio.get_running_loop()
+
+        def _handle(signame):
+            log.info(f'收到 {signame} 信号, 触发优雅关闭')
+            if self._stop_event and not self._stop_event.is_set():
+                self._stop_event.set()
+
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                # POSIX: async-safe 注册
+                loop.add_signal_handler(sig, _handle, sig.name)
+            except (NotImplementedError, RuntimeError):
+                # Windows 不支持 add_signal_handler, 用 signal.signal 兜底
+                with contextlib.suppress(ValueError, OSError):
+                    signal.signal(sig, lambda s, f: loop.call_soon_threadsafe(_handle, signal.Signals(s).name))
 
     # ===== 关闭 =====
 
