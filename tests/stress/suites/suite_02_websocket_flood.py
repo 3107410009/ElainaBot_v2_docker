@@ -5,6 +5,7 @@ Measures: admission rate, semaphore wait time, throughput ceiling vs webhook.
 """
 
 import asyncio
+import contextlib
 import time
 
 from tests.stress.config import StressTestConfig
@@ -55,14 +56,13 @@ class WebSocketFloodTest(BaseStressTest):
             rate_end = rate_start + dur_per_rate
             interval = 1.0 / rate if rate > 0 else 0
 
-            async def producer():
+            async def producer(rate_end=rate_end, interval=interval):
                 while time.time() < rate_end and not self._stop_event.is_set():
                     event = self._events[self._evt_idx % len(self._events)]
                     self._evt_idx += 1
 
                     # Simulate WSClient._dispatch_with_backpressure
                     t_wait = time.perf_counter()
-                    acquired = self._semaphore.locked() is False or self._semaphore._value > 0
                     async with self._semaphore:
                         wait_dt = time.perf_counter() - t_wait
                         self._sem_wait_times.append(wait_dt)
@@ -86,10 +86,8 @@ class WebSocketFloodTest(BaseStressTest):
                         await asyncio.sleep(interval)
 
             # Run producer
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(producer(), timeout=dur_per_rate + 5)
-            except asyncio.TimeoutError:
-                pass
 
     async def teardown(self) -> None:
         self._result.custom_metrics["sem_acquired"] = self._sem_acquired

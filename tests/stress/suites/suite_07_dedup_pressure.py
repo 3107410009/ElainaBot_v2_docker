@@ -9,7 +9,6 @@ import time
 import uuid
 
 from tests.stress.config import StressTestConfig
-from tests.stress.mocks.event_factory import EventFactory
 from tests.stress.suites.base import BaseStressTest
 
 

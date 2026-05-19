@@ -5,6 +5,7 @@ Measures: queue growth, QueueFull drops, flush throughput.
 """
 
 import asyncio
+import contextlib
 import time
 
 from tests.stress.config import StressTestConfig
@@ -39,7 +40,7 @@ class LogQueuePressureTest(BaseStressTest):
             interval = 1.0 / self._write_rate if self._write_rate > 0 else 0
             write_count = 0
 
-            async def writer():
+            async def writer(end_time=end_time, log_svc=log_svc, interval=interval):
                 nonlocal write_count
                 while time.time() < end_time and not self._stop_event.is_set():
                     data = {
@@ -74,10 +75,8 @@ class LogQueuePressureTest(BaseStressTest):
                 # Flush remaining
                 log_svc.drain_queue()
 
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(writer(), timeout=self._dur_per + 5)
-            except asyncio.TimeoutError:
-                pass
 
             stats = log_svc.stats()
             self._result.custom_metrics[f"qsize_{qsize}"] = stats

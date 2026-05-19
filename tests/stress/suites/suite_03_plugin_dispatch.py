@@ -5,13 +5,13 @@ Tests regex matching performance at different match depths.
 """
 
 import asyncio
-import re
-import time
+import contextlib
 import os
+import re
 import tempfile
+import time
 
 from tests.stress.config import StressTestConfig
-from tests.stress.mocks.bot_registry import MockBotRegistry
 from tests.stress.mocks.event_factory import EventFactory
 from tests.stress.mocks.message_sender import MockMessageSender
 from tests.stress.suites.base import BaseStressTest
@@ -59,7 +59,7 @@ class PluginDispatchTest(BaseStressTest):
 
             end_time = time.time() + dur_per_scenario
 
-            async def fire():
+            async def fire(end_time=end_time, evt_iter=evt_iter, handler_count=handler_count):
                 while time.time() < end_time and not self._stop_event.is_set():
                     try:
                         event = next(evt_iter)
@@ -84,10 +84,8 @@ class PluginDispatchTest(BaseStressTest):
                     if rate > 0:
                         await asyncio.sleep(1.0 / rate)
 
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(fire(), timeout=dur_per_scenario + 5)
-            except asyncio.TimeoutError:
-                pass
 
     def _setup_handlers(self, count, match_pos):
         """Register N handlers with various regex patterns.
@@ -110,7 +108,7 @@ class PluginDispatchTest(BaseStressTest):
             elif r < 9:  # 20% complex
                 pattern = f"^(?:query_{i}|查询_{i}|search_{i})\\s+(.+?)(?:\\s+(?:in|在)\\s+(.+))?$"
             else:  # 10% catch-all (low priority)
-                pattern = f"(.|\\n)*"
+                pattern = "(.|\\n)*"
 
             async def handler_fn(event, match, _idx=i):
                 pass

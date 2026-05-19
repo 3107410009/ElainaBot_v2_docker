@@ -7,13 +7,11 @@ Measures throughput ceiling, task explosion, and memory growth.
 
 import asyncio
 import time
-import json
-from functools import partial
 
 from tests.stress.config import StressTestConfig
 from tests.stress.mocks.bot_registry import MockBotRegistry
 from tests.stress.mocks.event_factory import EventFactory
-from tests.stress.suites.base import BaseStressTest, StressTestResult
+from tests.stress.suites.base import BaseStressTest
 
 
 class WebhookFloodTest(BaseStressTest):
@@ -30,7 +28,6 @@ class WebhookFloodTest(BaseStressTest):
         self._log_service = self._bot.log_service
 
         # Build the event pipeline: we call _on_event directly (mock the full Application)
-        from core.bot.event import EventHandlerMixin
 
         # Create a minimal event handler that skips heavyweight parts
         self._appid = self._bot.appid

@@ -6,7 +6,7 @@ Supports configurable bot counts and settings.
 
 from dataclasses import dataclass, field
 
-from tests.stress.config import MockConfig, MockMode
+from tests.stress.config import MockConfig
 from tests.stress.mocks.log_service import MockLogService
 from tests.stress.mocks.message_sender import MockMessageSender
 

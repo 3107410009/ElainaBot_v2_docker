@@ -5,7 +5,6 @@ Reads StressTestResult lists and produces formatted output.
 
 import json
 import os
-import time
 from datetime import datetime
 
 

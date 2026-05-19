@@ -9,7 +9,7 @@ import asyncio
 import random
 import time
 
-from tests.stress.config import MockConfig, MockMode
+from tests.stress.config import MockConfig
 
 
 class MockMessageSender:
@@ -141,7 +141,6 @@ class MockMessageSender:
             "send_count": self._send_count,
             "reply_count": self._reply_count,
             "error_count": self._error_count,
-            "avg_latency_ms": round((self._total_latency / max(self._send_count, 1)) * 1000, 2),
             "avg_latency_ms": round((self._total_latency / max(self._send_count, 1)) * 1000, 2),
         }
 

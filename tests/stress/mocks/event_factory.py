@@ -7,14 +7,12 @@ interactions, lifecycle events, and audit events.
 
 import time
 import uuid
-from functools import partial
 
 from core.message.event import (
     AT_MESSAGE_CREATE,
     C2C_MESSAGE_CREATE,
     DIRECT_MESSAGE_CREATE,
     FRIEND_ADD,
-    FRIEND_DEL,
     GROUP_ADD_ROBOT,
     GROUP_AT_MESSAGE_CREATE,
     GROUP_DEL_ROBOT,
@@ -22,7 +20,6 @@ from core.message.event import (
     INTERACTION_CREATE,
     MESSAGE_AUDIT_PASS,
     MESSAGE_AUDIT_REJECT,
-    MESSAGE_CREATE,
     MESSAGE_REACTION_ADD,
     Event,
 )
@@ -44,7 +41,6 @@ class EventFactory:
 
     @classmethod
     def _make_raw(cls, event_type, d_data=None):
-        ts = int(time.time() * 1000)
         return {
             "op": 0,
             "s": cls._next_seq(),

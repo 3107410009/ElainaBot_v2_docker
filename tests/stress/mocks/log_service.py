@@ -4,11 +4,10 @@ Wraps the LogService interface without SQLite writes.
 Records queue depth over time, drop counts, and flush latency.
 """
 
-import asyncio
 import time
 from collections import deque
 
-from tests.stress.config import MockConfig, MockMode
+from tests.stress.config import MockConfig
 
 
 class MockLogService:

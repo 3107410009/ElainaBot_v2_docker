@@ -5,19 +5,17 @@ Checks for memory leaks, task accumulation, and throughput stability.
 """
 
 import asyncio
-import re
-import time
-import os
-import tempfile
 import gc
+import os
+import re
+import tempfile
+import time
 
 from tests.stress.config import StressTestConfig
 from tests.stress.mocks.bot_registry import MockBotRegistry
 from tests.stress.mocks.event_factory import EventFactory
-from tests.stress.mocks.message_sender import MockMessageSender
 from tests.stress.mocks.hook_manager import (
     register_noop_hooks,
-    register_sleep_hooks,
 )
 from tests.stress.suites.base import BaseStressTest
 
@@ -77,7 +75,7 @@ class MixedEnduranceTest(BaseStressTest):
             last_sample = time.time()
             evt_count = 0
 
-            async def fire():
+            async def fire(end_time=end_time, evt_iter=evt_iter, interval=interval):
                 nonlocal evt_count, last_sample
                 while time.time() < end_time and not self._stop_event.is_set():
                     try:
@@ -112,8 +110,8 @@ class MixedEnduranceTest(BaseStressTest):
 
             try:
                 await asyncio.wait_for(fire(), timeout=dur + 10)
-            except asyncio.TimeoutError:
-                pass
+            except TimeoutError as ex:
+                print(f'TimeoutError: {ex}')
 
             # Final check
             gc.collect()
@@ -194,7 +192,9 @@ def _make_sync_handler(idx):
 
 def _get_rss_mb():
     try:
-        import psutil, os
+        import os
+
+        import psutil
         return round(psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024, 1)
     except ImportError:
         return 0

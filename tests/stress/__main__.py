@@ -70,11 +70,10 @@ def main():
 
 
 async def _run(args):
-    from tests.stress.config import load_scenario_config
-    from tests.stress.runner import StressTestRunner, create_runner
-
     # 初始化全局 ConfigManager（dispatch() 依赖 cfg.get_bot_setting()）
     from core.base.config import cfg
+    from tests.stress.config import load_scenario_config
+    from tests.stress.runner import create_runner
     if not cfg._ready:
         cfg.init(os.path.join(_project_root, "config"))
 
@@ -103,18 +102,18 @@ async def _run(args):
         if args.suite and sname != args.suite:
             continue
 
-        for cfg in configs:
+        for suite_cfg in configs:
             # 传播全局阈到每个 suite config（用于 verdict 判定）
-            cfg.fail_on_error_rate = global_cfg.fail_on_error_rate
-            cfg.fail_on_memory_leak_mb = global_cfg.fail_on_memory_leak_mb
+            suite_cfg.fail_on_error_rate = global_cfg.fail_on_error_rate
+            suite_cfg.fail_on_memory_leak_mb = global_cfg.fail_on_memory_leak_mb
             suite = cls(runner.collector)
-            await runner.run_suite(suite, cfg)
+            await runner.run_suite(suite, suite_cfg)
 
     runner.generate_report()
 
 
 async def _benchmark(args):
-    from tests.stress.runner import StressTestRunner, create_runner
+    from tests.stress.runner import create_runner
 
     runner = create_runner()
     suite_classes = _get_suite_classes()
@@ -137,12 +136,11 @@ async def _benchmark(args):
 
 def _report(args):
     """Generate report from existing raw metrics JSON."""
-    import json
-    from tests.stress.reporter import StressReporter
     from tests.stress.metrics import MetricsCollector
+    from tests.stress.reporter import StressReporter
 
     collector = MetricsCollector()
-    reporter = StressReporter(collector, os.path.dirname(args.input))
+    StressReporter(collector, os.path.dirname(args.input))
 
     if args.format == "json":
         print(f"JSON report would be generated from {args.input}")
@@ -194,19 +192,19 @@ def _get_suite_classes():
     try:
         from tests.stress.suites.suite_07_dedup_pressure import DedupPressureTest
         suites["dedup_pressure"] = DedupPressureTest
-    except ImportError as e:
+    except ImportError:
         pass
 
     try:
         from tests.stress.suites.suite_08_log_queue_pressure import LogQueuePressureTest
         suites["log_queue_pressure"] = LogQueuePressureTest
-    except ImportError as e:
+    except ImportError:
         pass
 
     try:
         from tests.stress.suites.suite_09_message_receive import MessageReceiveTest
         suites["message_receive"] = MessageReceiveTest
-    except ImportError as e:
+    except ImportError:
         pass
 
     return suites

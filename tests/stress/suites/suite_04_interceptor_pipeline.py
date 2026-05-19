@@ -5,13 +5,12 @@ Tests: noop, sleep, block_all work types at varying interceptor counts.
 """
 
 import asyncio
-import re
-import time
 import os
+import re
 import tempfile
+import time
 
 from tests.stress.config import StressTestConfig
-from tests.stress.mocks.bot_registry import MockBotRegistry
 from tests.stress.mocks.event_factory import EventFactory
 from tests.stress.mocks.message_sender import MockMessageSender
 from tests.stress.suites.base import BaseStressTest

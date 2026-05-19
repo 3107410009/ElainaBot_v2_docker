@@ -3,7 +3,6 @@
 Reads YAML config files and produces StressTestConfig dataclass instances.
 """
 
-import os
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -99,7 +98,7 @@ def load_scenario_config(path):
     """
     import yaml
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
 
     global_cfg = GlobalConfig.from_dict(data.get("global", {}))

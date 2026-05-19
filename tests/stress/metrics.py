@@ -29,9 +29,7 @@ class MetricValue:
     _count: int = 0
 
     def inc(self, delta=1.0):
-        if self.type == MetricType.COUNTER:
-            self._value += delta
-        elif self.type == MetricType.GAUGE:
+        if self.type == MetricType.COUNTER or self.type == MetricType.GAUGE:
             self._value += delta
 
     def dec(self, delta=1.0):

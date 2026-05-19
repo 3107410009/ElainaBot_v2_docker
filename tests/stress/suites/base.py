@@ -123,7 +123,7 @@ class BaseStressTest(ABC):
                 )
             else:
                 await self.run_phase(config)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass  # Duration expired — expected
 
         # Cooldown: let pending tasks drain
@@ -155,8 +155,6 @@ class BaseStressTest(ABC):
 
     def _start_monitors(self):
         """Start background monitors (loop lag, memory sampler)."""
-        loop = asyncio.get_running_loop()
-
         # Event loop lag monitor
         async def lag_monitor():
             interval = 0.1
@@ -277,6 +275,7 @@ def _memory_sample():
     """Sample process memory and asyncio task count."""
     try:
         import os
+
         import psutil
         proc = psutil.Process(os.getpid())
         mem = proc.memory_info()
