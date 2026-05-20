@@ -27,6 +27,9 @@ Thumbs.db
 /data/log/
 /data/web/
 /data/session/
+/data/media/
+/data/bot_openids.json
+/web/data/
 
 # --- Project: Module-local Runtime Data ---
 modules/modules_enabled.json
