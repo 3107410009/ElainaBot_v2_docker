@@ -24,9 +24,8 @@ venv/
 Thumbs.db
 
 # --- Project: Runtime Data ---
-/data/log/
-/data/web/
-/data/session/
+/data
+/web/data
 
 # --- Project: Module-local Runtime Data ---
 modules/modules_enabled.json
