@@ -83,7 +83,7 @@ class _DispatchMixin:
                 ab = h['_allowed_bots']
                 if ab is not None and appid not in ab:
                     continue
-                m = h['compiled'].search(content) if content else h['compiled'].search('')
+                m = h['compiled'].search(content)
                 if not m:
                     continue
                 if h['_smask'] & ~scene:
